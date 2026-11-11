@@ -1,6 +1,6 @@
 ---
 name: revealui-recover
-description: Recover crashed or interrupted Studio sessions (Claude + Grok). Mandatory 72h historical inventory first. Surfaces unfinished threads, orphan artifacts, git corruption, hook residue, and workboard CRASHED markers. Diagnostic-first — never executes destructive repairs without explicit approval.
+description: Recover interrupted Studio sessions and diagnose rfx checkout launch failures. Full crash recovery starts with a 72h historical inventory. Surfaces unfinished threads, orphan artifacts, git corruption, hook residue, and workboard CRASHED markers. Diagnostic-first — never executes destructive repairs without explicit approval.
 license: MIT
 allowed-tools: Bash, Read, Grep, Glob
 metadata:
@@ -19,6 +19,20 @@ Load shared helpers:
 ```bash
 . "$REVEALFLEET_ROOT/revskills/scripts/lib/session-state.sh"
 ```
+
+## When rfx cannot open a checkout
+
+For a request limited to restoring checkout access, diagnose the launcher
+failure first. Follow the [reviewed checkout renewal procedure](rfx-checkout-renewal.md)
+if an admission is incomplete or tied to a previous runtime policy. Keep the
+operator approval steps and verify the admitted checkout path and branch
+against the handoff after launch. The owner worktree can map to a private
+checkout under `.reviews/`.
+
+Report checkout access and conversation recovery separately. A fresh launch
+can recover access to the work. Resuming a conversation requires a supported
+session binding. Once the checkout opens, use `revealui-pickup` to continue
+from a recorded handoff. For full crash recovery, run the inventory below.
 
 ## Required first action
 
