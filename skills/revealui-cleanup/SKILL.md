@@ -7,15 +7,14 @@ description: >
   gated. Also runs from /checkpoint after prepare-for-exit (no --fix).
   Not /recover. Not /ops list.
 license: MIT
+compatibility: RevealFleet Studio layout at REVEALFLEET_ROOT; executable helpers require Node.js 24+ and pnpm 10 when invoked.
 allowed-tools: Bash
 metadata:
+  pack: studio
   author: RevealUI Studio
-  version: "0.1.0"
+  version: "0.1.1"
   website: https://revealui.com
-  related:
-    - revealui-ops
-    - revealui-checkpoint
-    - revealui-rollup
+  related: "revealui-ops revealui-checkpoint revealui-rollup"
 ---
 
 # Cleanup (`/cleanup`) — session residue

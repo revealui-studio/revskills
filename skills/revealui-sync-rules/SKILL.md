@@ -2,40 +2,35 @@
 name: revealui-sync-rules
 description: Verify agent rules distribution topology across RevealUI repos (revcon profiles, materialized copies). Prefer control-layer / revcon entrypoints; Claude hook path is one adapter. Read-only; never mutates without asking.
 license: MIT
+compatibility: RevealFleet Studio layout at REVEALFLEET_ROOT; executable helpers require Node.js 24+ and pnpm 10 when invoked.
 allowed-tools: Bash
 metadata:
+  pack: studio
   author: RevealUI Studio
-  version: "0.3.1"
+  version: "0.3.2"
   website: https://revealui.com
 ---
 
 Run the topology check and report results.
 
-## Entry points (first match wins)
+## Report-only entry point
 
 ```bash
-# 1) Control-layer / revcon when available
-if [ -x "$REVEALFLEET_ROOT/revcon/link.sh" ]; then
-  # report-only: do not run link.sh without owner ask; prefer check scripts
-  echo "revcon present: $REVEALFLEET_ROOT/revcon"
-fi
-if [ -f "$REVEALFLEET_ROOT/revskills/scripts/verify-copy-lockstep.sh" ]; then
-  bash "$REVEALFLEET_ROOT/revskills/scripts/verify-copy-lockstep.sh" 2>/dev/null || true
-fi
-
-# 2) Claude adapter hook (legacy Studio path)
-if [ -f "$HOME/.claude/hooks/sync-rules.sh" ]; then
-  bash "$HOME/.claude/hooks/sync-rules.sh"
-elif [ -f "$HOME/.claude/hooks/sync-rules.js" ]; then
-  node "$HOME/.claude/hooks/sync-rules.js" 2>/dev/null || true
+if [ -x "$REVEALFLEET_ROOT/revcon/status.sh" ]; then
+  bash "$REVEALFLEET_ROOT/revcon/status.sh" --verify
 else
-  echo "SKIP: no sync-rules entry on this machine — inspect revcon profiles + .claude/.revcon-manifest.json manually"
+  echo "SKIP: revcon status checker is absent"
 fi
 ```
 
+Preserve the checker exit status and report its failures. Do not run an adapter
+`sync-rules` hook as a fallback: a hook may materialize files. For a single
+copy-mode repo, the narrower verifier requires an explicit target:
+`bash "$REVEALFLEET_ROOT/revskills/scripts/verify-copy-lockstep.sh" --target "$repo"`.
+
 How to interpret output (two sanctioned distribution modes):
 
-- `<repo>: materialized` — git-tracked copies + `.claude/.revcon-manifest.json`; content verification is that repo's rules-lockstep CI.
+- `<repo>: materialized` — git-tracked copies + `.claude/.revcon-manifest.json`; `status.sh --verify` checks current topology and copy drift.
 - `BROKEN SYMLINK` / `FOREIGN TARGET` (exit 1) — fix on revcon side; report and ask before touching.
 - `VENDORED COPY` (warn) — regular file shadows profile rule without manifest; present options and ask.
 

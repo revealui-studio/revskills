@@ -1,63 +1,80 @@
 {
-  "mode": "copy",
   "editor": "claude",
-  "profiles": ["revealfleet"],
   "files": {
     "rules/code-over-docs.md": {
-      "source": "profiles/revealfleet/claude/rules/code-over-docs.md",
-      "sha256": "fcc9af90a0fc31a1c04202891099a5e6e0f13502649011fd7a9cfe59bf6b5500"
+      "generatedFrom": ".revealui/content/rules/code-over-docs.md",
+      "sha256": "166172dbd525830831015f4c9d76fc39e6924a7f195a2736b725e696ca606e65",
+      "source": "profiles/revealfleet/revealui/rules/code-over-docs.md"
     },
     "rules/control-layer.md": {
-      "source": "profiles/revealfleet/claude/rules/control-layer.md",
-      "sha256": "289388f1038de4f372f5eeea5a61ee583fbea93042d01801b6c90b01d878c9f9"
+      "generatedFrom": ".revealui/content/rules/control-layer.md",
+      "sha256": "6e2910a016cdb3726e3f43409b90463b74a3ce05dd472a76fb6e80e5ae9b9494",
+      "source": "profiles/revealfleet/revealui/rules/control-layer.md"
     },
     "rules/disposition-actions.md": {
-      "source": "profiles/revealfleet/claude/rules/disposition-actions.md",
-      "sha256": "db2e1964f359e0df046788ee7b828168efd8ea27c20384edc99fe5647404a603"
+      "generatedFrom": ".revealui/content/rules/disposition-actions.md",
+      "sha256": "843196de5162a880b10f1227e36b1ca8e753fae89570e97511037753f1abd323",
+      "source": "profiles/revealfleet/revealui/rules/disposition-actions.md"
     },
     "rules/durable-solutions.md": {
-      "source": "profiles/revealfleet/claude/rules/durable-solutions.md",
-      "sha256": "1d9ab978b70bf67f68b65c4b9e06f1065730d1b212fb51d71c42bffc26de1e63"
+      "generatedFrom": ".revealui/content/rules/durable-solutions.md",
+      "sha256": "feb14a88fe7da1ede65610fc8b6ef27d7c1aef1d5b62371f6ba495599d543ea1",
+      "source": "profiles/revealfleet/revealui/rules/durable-solutions.md"
     },
     "rules/exhaustive.md": {
-      "source": "profiles/revealfleet/claude/rules/exhaustive.md",
-      "sha256": "53779eb567f634c7108e5fc12ea2d2fcbd4c3b1eeaef8bf48ba3d67b202b21a8"
+      "generatedFrom": ".revealui/content/rules/exhaustive.md",
+      "sha256": "22c3686f40e9d769c335a3fb68249208bfe293a4aeee90a5096422e13b255ac3",
+      "source": "profiles/revealfleet/revealui/rules/exhaustive.md"
     },
     "rules/extend-before-create.md": {
-      "source": "profiles/revealfleet/claude/rules/extend-before-create.md",
-      "sha256": "eda319933321d2d69db659dfd6d441640d25d69b8c51b2ae026ca0974e0f430c"
+      "generatedFrom": ".revealui/content/rules/extend-before-create.md",
+      "sha256": "3145429dc39a4111e406d021f6cd64e40e6c48d478933c3382b65f12f109f085",
+      "source": "profiles/revealfleet/revealui/rules/extend-before-create.md"
     },
     "rules/git.md": {
-      "source": "profiles/revealfleet/claude/rules/git.md",
-      "sha256": "feb72f9ac185ab69c27b38653f2631b9f5bec908af80c6131b87d109c36564c0"
+      "generatedFrom": ".revealui/content/rules/git.md",
+      "sha256": "ab8b4efb24cde456cf701b2767c398b5f8c93c9f384aac97f5d33ba61517f3c8",
+      "source": "profiles/revealfleet/revealui/rules/git.md"
     },
     "rules/model-allocation.md": {
-      "source": "profiles/revealfleet/claude/rules/model-allocation.md",
-      "sha256": "d71bb65d9315523e29b927ae47c7a3e9e35e763c7c30602d04c3043f92413c9b"
+      "generatedFrom": ".revealui/content/rules/model-allocation.md",
+      "sha256": "f1dfdb6f02f4778514501aad25e176d2f2e69685864fad643e5e1ad5311154fb",
+      "source": "profiles/revealfleet/revealui/rules/model-allocation.md"
     },
     "rules/no-em-dashes.md": {
-      "source": "profiles/revealfleet/claude/rules/no-em-dashes.md",
-      "sha256": "18b1cfe5218fd816837c13a2e6cd08786befad19a292f1fa85874a3ad0b5f22e"
+      "generatedFrom": ".revealui/content/rules/no-em-dashes.md",
+      "sha256": "07ef00f4e8f317f2e890d156c93ff12aaae8ad300ea70fc9b68304ed01d02223",
+      "source": "profiles/revealfleet/revealui/rules/no-em-dashes.md"
     },
     "rules/opensrc.md": {
-      "source": "profiles/revealfleet/claude/rules/opensrc.md",
-      "sha256": "bdb095fac109fbb5616dde222e0cfbc3e1d52ebf616609f3e865717773a2fb73"
+      "generatedFrom": ".revealui/content/rules/opensrc.md",
+      "sha256": "9bf4195b3eea45434bc3aa44b93ca391380323ee0f4243068f885b725bf85e35",
+      "source": "profiles/revealfleet/revealui/rules/opensrc.md"
     },
     "rules/planning.md": {
-      "source": "profiles/revealfleet/claude/rules/planning.md",
-      "sha256": "315062ea332839617615e4c5fda5e1d50fde69090e55af6895ed343e18027e7d"
+      "generatedFrom": ".revealui/content/rules/planning.md",
+      "sha256": "8f281218328de88a22214bc32f6a9bf8ff95fda9557ee0b47660f5417b862a3d",
+      "source": "profiles/revealfleet/revealui/rules/planning.md"
     },
     "rules/secrets.md": {
-      "source": "profiles/revealfleet/claude/rules/secrets.md",
-      "sha256": "79d09010deb767f582cbd0a28f12d6bf3a36cc44e2f4260a7fbaddd709318d68"
+      "generatedFrom": ".revealui/content/rules/secrets.md",
+      "sha256": "3d72f84e65107a4caeb58601b8edb3a03bf59cc338308c812a8fc270d93d612c",
+      "source": "profiles/revealfleet/revealui/rules/secrets.md"
     },
     "rules/temp-scripts.md": {
-      "source": "profiles/revealfleet/claude/rules/temp-scripts.md",
-      "sha256": "66a574826b46352275606d88a9854a0e63c39433a97a55c75f50ccc0f4862a15"
+      "generatedFrom": ".revealui/content/rules/temp-scripts.md",
+      "sha256": "43e20e8b37726b2796768f28bd5daf071c347fdad8fcc5ee4d0ed62f571c297a",
+      "source": "profiles/revealfleet/revealui/rules/temp-scripts.md"
     },
     "rules/token-economy.md": {
-      "source": "profiles/revealfleet/claude/rules/token-economy.md",
-      "sha256": "b30a830e9dd333b05085bc5ce3994c477ac66390aabe4cf41741a64ccd12ef57"
+      "generatedFrom": ".revealui/content/rules/token-economy.md",
+      "sha256": "c421b8e78bee5f9d3e4006a587ba93c1c1b77b62dfddef80666a1f10d84d7f49",
+      "source": "profiles/revealfleet/revealui/rules/token-economy.md"
     }
-  }
+  },
+  "generatedFrom": ".revealui",
+  "mode": "copy",
+  "profiles": [
+    "revealfleet"
+  ]
 }

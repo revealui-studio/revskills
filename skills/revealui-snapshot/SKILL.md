@@ -1,11 +1,13 @@
 ---
 name: revealui-snapshot
-description: Capture a mid-session fidelity snapshot for RevealFleet sessions, keyed to a harness-neutral session id (AGENT_SESSION_ID, then REVEALUI_SESSION_ID, then CLAUDE_CODE_SESSION_ID). Assembles mechanical state and authors the five sections checkpoint consumes, writing under ~/.local/share/revealui/coordination/snapshots/$SID.md (GAP-469). Also promotes durable feedback/rule-class lessons to the memory directory. Exposed as /snapshot. MUST run this turn when a Stop hook blocks for snapshot, when a [snapshot] advisory fires, or before /compact. Producer half of GAP-317.
+description: Capture a mid-session fidelity snapshot for RevealFleet sessions, keyed to a harness-neutral session id (AGENT_SESSION_ID, then REVEALUI_SESSION_ID, then CLAUDE_CODE_SESSION_ID). Assembles mechanical state and authors the five sections checkpoint consumes, writing under ~/.local/share/revealui/coordination/snapshots/$SID.md (GAP-469). Records durable feedback/rule-class lessons for later verified memory publication. Exposed as /snapshot. MUST run this turn when a Stop hook blocks for snapshot, when a [snapshot] advisory fires, or before /compact. Producer half of GAP-317.
 license: MIT
-allowed-tools: Bash, Read, Write, Edit
+compatibility: RevealFleet Studio layout at REVEALFLEET_ROOT; executable helpers require Node.js 24+ and pnpm 10 when invoked.
+allowed-tools: Bash Read Write Edit
 metadata:
+  pack: studio
   author: RevealUI Studio
-  version: "0.4.1"
+  version: "0.4.2"
   website: https://revealui.com
 ---
 
@@ -114,14 +116,14 @@ occupancy-pct: <the last [context] advisory pct if you saw one, else omit this l
 
 Refresh semantics: re-running `/snapshot` overwrites the same `$SID.md` with the current state — later in a session is more accurate, so refresh freely when the picture has materially changed.
 
-## Step 4 — Memory promotion
+## Step 4 — Preserve durable lessons for verified publication
 
-Durable lessons are product memory in the knowledge graph (`revealui.memory.v1`), as `skills/multi-agent-memory` defines it. Claude `~/.claude` memory files, Grok `[memory]`, and any other vendor home are pointers. They are not a second durable store. Do not write `~/.claude/projects/<project>/memory/` from this step.
+Durable lessons belong in product memory when a verified publication API is available. This skill has no such write operation. Claude `~/.claude` memory files, Grok `[memory]`, and other vendor homes are not a substitute durable store. Do not claim a lesson was promoted merely because it appears in this snapshot.
 
 Scan `## Active-Constraints` and `## Do-Not-Repeat`:
 
 - Session-only facts stay in the snapshot.
-- A feedback-class or rule-class lesson that should outlive the session stays in those sections and is named under `## Open-Loose-Ends` until the knowledge graph is available. Do not copy it into a vendor memory directory.
+- A feedback-class or rule-class lesson that should outlive the session stays in those sections and is named under `## Open-Loose-Ends` with the exact publication target and unresolved status. Checkpoint must carry it forward until a supported memory API confirms the write. Do not copy it into a vendor memory directory.
 - Do not add a `memory-promoted:` line that points at Claude vendor memory files.
 
 
@@ -138,7 +140,7 @@ Requires `~/.local/share/revealui/harness.sock` (or `REVEALUI_SOCKET` / `DAEMON_
 
 ## Do not
 
-- Do NOT write to any path other than `$WRITE_PATH` from `ss_snapshot_write_path` (neutral coordination root). The filename IS the id-match contract the consumer depends on.
+- Do NOT write the snapshot artifact to any path other than `$WRITE_PATH` from `ss_snapshot_write_path` (neutral coordination root). The filename IS the id-match contract the consumer depends on.
 - Do NOT ask the operator to export `AGENT_SESSION_ID` / `CLAUDE_CODE_SESSION_ID` — resolution is automatic via `ss_session_id` (GAP-469).
 - Do NOT invent mechanical state — if `gh`/`git` could not answer, say so in the section rather than guessing PR numbers or branch names.
 - Do NOT promote session-scoped facts to memory; only durable feedback/rule-class lessons. Over-promotion is drift.

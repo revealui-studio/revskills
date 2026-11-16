@@ -1,56 +1,65 @@
+<!-- generated from .revealui/content/rules/token-economy.md -->
 # Token Economy — Spend Tokens Only Where They Buy Value
 
-**Status:** convention, owner directive 2026-07-16. Governs the *amount of work*
-sent to any model, tool, loop, or automation (the companion to model routing,
-which picks the cheapest *capable* model).
+**Status:** HARDLINE every session (all harnesses). Control-layer SSOT for GAP-362.
+Owner directive 2026-07-16; control-layer re-read 2026-07-24 (not a dual-home twin).
 
-## The principle
+Every token spent must buy proportional value. Tokens are a real cost for the
+operator and for customers running agents. Thoroughness that prevents a wrong
+merge is worth thousands of tokens. Waste is spend that changes nothing.
 
-Every token spent must buy proportional value. Tokens are a real cost — to you
-now and to anyone running this fleet later — so the default is the smallest
-amount of work that reaches a correct, verified result. Thoroughness is not the
-enemy: a deep audit that prevents a wrong merge is worth thousands of tokens.
-Waste is spend that changes nothing — polling that a notification would have
-delivered for free, a re-read of a file you just wrote, a subagent whose answer
-you already had. Cut the second kind, never the first.
+## Loops, wakeups, and polling
 
-## Loops, wakeups, and polling (the biggest avoidable drain)
-
-- **Never poll for background work the harness already tracks.** Background
-  agents and long-running commands re-invoke you automatically on completion.
-  Scheduling a wakeup or loop tick to "check on" them spends tokens to learn
-  what you'd have been told for free. Wait for the notification.
-- **Never schedule wakeups to keep a prompt cache warm.** The session cache
-  already covers the allowed delay range; extra wakeups are pure waste.
-- **Match any real loop's cadence to what it waits on.** An ~8-minute CI run
-  gets one ~480s check, not eight 60s ones. Idle heartbeats default to
-  1200–1800s.
-- **Stop a loop the moment it stops advancing work.** Three consecutive
-  "nothing actionable" ticks means scale back to one quick check and stop. If a
-  loop is only polling auto-notified work, stop it entirely. When in doubt,
-  pause rather than keep ticking — it can always be resumed.
-- **Surface and stop, don't silently burn.** If an automation is spending
-  tokens for no forward progress, end it and say so in one line.
+1. **Never poll for harness-tracked background work.** Background agents,
+   `run_in_background` commands, and workflows re-invoke on completion.
+   Scheduling a wakeup to "check on" them is pure waste. Prefer completion
+   events (`work.completed`, `events.wait`, harness notifications).
+2. **Never schedule wakeups only to keep a prompt cache warm.**
+3. **Match loop cadence to the signal.** A job that takes ~8 minutes gets one
+   ~480s check, not eight 60s polls. Idle heartbeats with no specific signal
+   default to 1200–1800s. Sub-minute idle polling should warn (daemon
+   `loop.arm` cadence guard) and prefer `events.wait`.
+4. **Stop when not advancing.** Three consecutive no-op ticks means stop or
+   widen — surface a signal (`loop.not_advancing`) and pause cleanly. Do not
+   burn tokens on a dead loop.
+5. **Surface and stop.** If an automation is spending tokens with no forward
+   progress, end it and say so in one line.
 
 ## Tools, skills, subagents, workflows
 
-- **Invoke for a result you don't already have, not for form's sake.** Don't run
-  a search whose answer is in context; don't re-read a file you just wrote;
-  don't re-derive a fact the transcript already established.
-- **One broad delegation beats many narrow calls.** Send one well-scoped
-  agent/search and keep the conclusion, rather than dozens of round-trips whose
-  intermediate output you don't need.
-- **Don't double-run delegated work.** Once a subagent owns a search or build,
-  don't also do it yourself — wait for its result.
-- **Reserve fan-out for proportional payoff.** Dozens of agents are right for a
-  genuine audit or migration; waste for a task one context can hold.
-- **Batch and cache external calls.** Make independent calls in one turn so they
-  run in parallel; don't refetch a URL/result already in context.
+- Invoke for a result you do not already have.
+- One broad well-scoped delegation over many narrow round-trips.
+- Do not re-run work a subagent already owns; wait for the result.
+- Reserve large fan-out for proportional payoff.
+- Batch independent tool calls; do not refetch cached external results.
+
+## Context window
+
+Parent sessions compact at 160000 tokens on a 500000 window (32%). Snapshot 40000 tokens earlier (120000), before that compact runs.
+
+The numbers are authored only in `packages/harnesses/src/token-budget.ts`. Grok materialize writes them to `.revealui/adapters/grok/token-budget.json`. RevKit applies `compaction_at_tokens` on `grok-4.7` and `grok-4.7-build` and `auto_compact_threshold_percent = 32`. Other harnesses follow this contract with their own compact mechanism. Do not copy those TOML keys into a pressure score that is not this window.
+
+Grep and shell output past 30720 characters keeps 12288 characters at the head and 12288 at the tail. File reads stay intact. The Grok hook is `cap-tool-output.json`, emitted next to the session hooks.
 
 ## Verification is proportional, not skipped
 
 Right-sizing spend never means skipping verification on risky changes. Prove
-tests red before claiming a fix, drive the real flow on product changes, run the
-gate before a push. The economy is in not re-verifying what's already proven and
-not re-reading what can't have changed — never in cutting the check that catches
-a real bug. Correctness and authorization always outrank economy.
+tests red before claiming a fix. The economy is in not re-verifying what is
+already proven — never in cutting the check that catches a real bug.
+
+## Runtime primitives (RevDev)
+
+| Primitive | Role |
+|-----------|------|
+| `work.completed` event | Emitted on `tasks.complete` (durable + in-process bus) |
+| `events.wait` | Long-poll for completion instead of client busy-poll |
+| `loop.arm` / `tick` / `stop` | Cadence warn + consecutive no-op stop signal |
+
+Default path is unchanged when no loop is armed.
+
+## Relationship
+
+- **model-allocation** — right model; this rule is the *volume* sibling.
+- **quality-over-speed** — never trade correctness for token savings.
+- **durable-solutions** — no "poll until deploy" workarounds.
+- **GAP-362** — living execution unit; this rule is the shared hardline text.

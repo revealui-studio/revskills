@@ -9,7 +9,9 @@ set -uo pipefail
 
 TEST_PASS=0
 TEST_FAIL=0
-declare -a CLEANUP_DIRS=()
+# Allocate once in the parent: command substitutions inherit this stable root.
+TEST_SANDBOX_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/revskills-suite.XXXXXX")"
+chmod 700 "$TEST_SANDBOX_ROOT"
 
 pass() {
   TEST_PASS=$((TEST_PASS + 1))
@@ -65,18 +67,13 @@ assert_eq() {
 
 # make_sandbox — create a tracked temp dir, auto-removed by cleanup_sandboxes.
 make_sandbox() {
-  local dir
-  dir="$(mktemp -d "${TMPDIR:-/tmp}/revskills-test.XXXXXX")"
-  CLEANUP_DIRS+=("$dir")
-  printf '%s\n' "$dir"
+  mktemp -d "$TEST_SANDBOX_ROOT/case.XXXXXX"
 }
 
 cleanup_sandboxes() {
-  local d
-  for d in "${CLEANUP_DIRS[@]:-}"; do
-    [[ -n "$d" && -d "$d" ]] && rm -rf "$d"
-  done
-  CLEANUP_DIRS=()
+  if [[ -n "${TEST_SANDBOX_ROOT:-}" && -d "$TEST_SANDBOX_ROOT" ]]; then
+    rm -rf -- "$TEST_SANDBOX_ROOT"
+  fi
 }
 trap cleanup_sandboxes EXIT
 
@@ -94,6 +91,9 @@ make_isolated_skills_lint_env() {
   mkdir -p "$sandbox/scripts/lib" "$sandbox/skills"
   cp "$REPO_ROOT/scripts/lint-all-skills.sh" "$sandbox/scripts/lint-all-skills.sh"
   cp "$REPO_ROOT/scripts/lib/lint-skill.awk" "$sandbox/scripts/lib/lint-skill.awk"
+  cp "$REPO_ROOT/scripts/validate-metadata.mts" "$sandbox/scripts/validate-metadata.mts"
+  cp "$REPO_ROOT/scripts/lib/skill-metadata.mts" "$sandbox/scripts/lib/skill-metadata.mts"
+  ln -s "$REPO_ROOT/node_modules" "$sandbox/node_modules"
   local name
   for name in "$@"; do
     cp -R "$REPO_ROOT/test/fixtures/skills/$name" "$sandbox/skills/$name"

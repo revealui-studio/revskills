@@ -8,13 +8,13 @@ staleness-status: FRESH
 
 # RevSkills — Master Plan
 
-**Last Updated:** 2026-10-09  
-**Status:** Active. **29** skills shipped under `skills/` (pre-1.0 per skill)  
-**Owner:** RevealUI Studio  
+**Last Updated:** 2026-10-09
+**Status:** Active. See [generated skill inventory](./SKILL_INVENTORY.md) for the current shipped count and pack classification (pre-1.0 per skill)
+**Owner:** RevealUI Studio
 **Repo:** [RevealUIStudio/revskills](https://github.com/RevealUIStudio/revskills)
 
-> Fleet-level plans live in the private coordination hub. This file is RevSkills-scoped only.  
-> **Code-over-docs:** skill count = directories under `skills/` with a `SKILL.md`.
+> Fleet-level plans live in the private coordination hub. This file is RevSkills-scoped only.
+> **Code-over-docs:** `node scripts/generate-skill-inventory.mts --check` validates the count and pack against parsed skill metadata.
 
 ---
 
@@ -22,16 +22,16 @@ staleness-status: FRESH
 
 ### What exists
 
-29 Agent Skills (vendor-agnostic SSOT under `skills/`). Equal adapters: Claude Code, Grok, Cursor, OpenCode, VS Code. Public install: `npx skills add RevealUIStudio/revskills`. Claude `.claude-plugin/` is one marketplace adapter.
+Agent Skills under `skills/` are the SSOT. Compatible adapters include Claude Code, Grok, Cursor, OpenCode, and VS Code; individual skills declare their layout, service, and runtime requirements. Public install: `npx skills add RevealUIStudio/revskills`. Claude `.claude-plugin/` is one marketplace adapter.
 
-Categories (see root `README.md` for the live table):
+The generated categories and asset counts are in `SKILL_INVENTORY.md`. Representative areas:
 
 - Framework & app patterns (Next, Tailwind, security)
 - Data & sync (Drizzle, Electric, Yjs)
 - AI & agents (MCP, multi-agent memory, grok-bot-checkpoint)
 - Testing (Vitest)
-- Audit & architecture (exhaustive-audit, redundancy-scan, knowledge-graph)
-- Design (revealui-design + kits)
+- Audit & architecture (exhaustive-audit, redundancy-scan; fleet knowledge-graph is Studio context)
+- Design (revealui-design; retired kits are pointer pages)
 - Studio-internal workflow skills (checkpoint, snapshot, ops, doctor, recover, …)
 
 ### Residuals
@@ -56,5 +56,6 @@ Categories (see root `README.md` for the live table):
 
 ## See also
 
-- [`../README.md`](../README.md) — install + skill index  
-- [`docs/MASTER_SPEC.md`](./MASTER_SPEC.md) — skill layout contract  
+- [`../README.md`](../README.md) — install + skill index
+- [`docs/MASTER_SPEC.md`](./MASTER_SPEC.md) — skill layout contract
+- [`SKILL_INVENTORY.md`](./SKILL_INVENTORY.md) — generated count, pack, and executable assets

@@ -2,10 +2,12 @@
 name: revealui-design-status
 description: "Claude-adapter skill: check whether the claude.ai/design project changed since the codebase last pushed to it (DesignSync). Design-to-code awareness half of the design-code sync loop (GAP-322). Proposal-shaped only; never writes code or pushes to design."
 license: MIT
-allowed-tools: Bash, Read
+compatibility: RevealFleet Studio layout and Claude design adapter; requires the configured claude.ai design project.
+allowed-tools: Bash Read
 metadata:
+  pack: studio
   author: RevealUI Studio
-  version: "0.1.2"
+  version: "0.1.3"
   website: https://revealui.com
   adapter: claude
 ---

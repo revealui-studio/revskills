@@ -11,7 +11,7 @@
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
-const { parseArgs, loadConfig, walkFiles, writeJsonl } = require("./lib.js");
+const { parseArgs, loadConfig, walkScope, findingId, writeJsonl } = require("./lib.js");
 
 function main() {
   const args = parseArgs(process.argv);
@@ -23,21 +23,18 @@ function main() {
   }
 
   const cfg = loadConfig(args.config);
-  const excludeSet = new Set(cfg.excludeDirNames || []);
-  const textExtSet = new Set(cfg.textExtensions || []);
   const minBytes = cfg.minHashBytes || 32;
-  const maxBytes = cfg.maxFileBytes || 1_500_000;
   const rootAbs = path.resolve(args.root);
   const prefix = args.prefix || "";
 
   const byHash = new Map();
-  walkFiles(rootAbs, "", excludeSet, textExtSet, maxBytes, ({ abs, rel, size }) => {
+  walkScope(args, cfg, ({ abs, rel, size }) => {
     if (size < minBytes) return;
     let buf;
     try {
       buf = fs.readFileSync(abs);
-    } catch {
-      return;
+    } catch (error) {
+      throw new Error(`Cannot read ${abs}: ${error.message}`);
     }
     // skip binary-ish
     for (let i = 0; i < Math.min(buf.length, 8000); i++) {
@@ -50,12 +47,10 @@ function main() {
   });
 
   const findings = [];
-  let id = 0;
   for (const [sha256, files] of byHash) {
     if (files.length < 2) continue;
-    id++;
     findings.push({
-      id: `DUP-EXACT-${String(id).padStart(4, "0")}`,
+      id: findingId("DUP-EXACT", [sha256, files.map((f) => f.path).sort()]),
       class: "exact-duplicate",
       severity: "medium",
       title: `Exact duplicate content (${files.length} files)`,

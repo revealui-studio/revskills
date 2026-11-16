@@ -1,0 +1,65 @@
+{
+  "editor": "revealui",
+  "files": {
+    "content/rules/code-over-docs.md": {
+      "sha256": "092c970e6638e76ca6a14f8fb0f25ca70eb76fa3da95e34fcdb0f6cd18c59561",
+      "source": "profiles/revealfleet/revealui/rules/code-over-docs.md"
+    },
+    "content/rules/control-layer.md": {
+      "sha256": "289388f1038de4f372f5eeea5a61ee583fbea93042d01801b6c90b01d878c9f9",
+      "source": "profiles/revealfleet/revealui/rules/control-layer.md"
+    },
+    "content/rules/disposition-actions.md": {
+      "sha256": "521e36946f1d899fdc66e9b2bc6f58a7807bd389ef36074bea7009ef5b9ba909",
+      "source": "profiles/revealfleet/revealui/rules/disposition-actions.md"
+    },
+    "content/rules/durable-solutions.md": {
+      "sha256": "94d6c766af19922af9b9021ca5656d782b1817481533aaaef80f2bea5e9cd4fa",
+      "source": "profiles/revealfleet/revealui/rules/durable-solutions.md"
+    },
+    "content/rules/exhaustive.md": {
+      "sha256": "53779eb567f634c7108e5fc12ea2d2fcbd4c3b1eeaef8bf48ba3d67b202b21a8",
+      "source": "profiles/revealfleet/revealui/rules/exhaustive.md"
+    },
+    "content/rules/extend-before-create.md": {
+      "sha256": "eda319933321d2d69db659dfd6d441640d25d69b8c51b2ae026ca0974e0f430c",
+      "source": "profiles/revealfleet/revealui/rules/extend-before-create.md"
+    },
+    "content/rules/git.md": {
+      "sha256": "68d729dbb87d13b3c9f4ead1b4ff6a3d76aac076a1a28136284c612f1c89e6f2",
+      "source": "profiles/revealfleet/revealui/rules/git.md"
+    },
+    "content/rules/model-allocation.md": {
+      "sha256": "d71bb65d9315523e29b927ae47c7a3e9e35e763c7c30602d04c3043f92413c9b",
+      "source": "profiles/revealfleet/revealui/rules/model-allocation.md"
+    },
+    "content/rules/no-em-dashes.md": {
+      "sha256": "18b1cfe5218fd816837c13a2e6cd08786befad19a292f1fa85874a3ad0b5f22e",
+      "source": "profiles/revealfleet/revealui/rules/no-em-dashes.md"
+    },
+    "content/rules/opensrc.md": {
+      "sha256": "bdb095fac109fbb5616dde222e0cfbc3e1d52ebf616609f3e865717773a2fb73",
+      "source": "profiles/revealfleet/revealui/rules/opensrc.md"
+    },
+    "content/rules/planning.md": {
+      "sha256": "315062ea332839617615e4c5fda5e1d50fde69090e55af6895ed343e18027e7d",
+      "source": "profiles/revealfleet/revealui/rules/planning.md"
+    },
+    "content/rules/secrets.md": {
+      "sha256": "79d09010deb767f582cbd0a28f12d6bf3a36cc44e2f4260a7fbaddd709318d68",
+      "source": "profiles/revealfleet/revealui/rules/secrets.md"
+    },
+    "content/rules/temp-scripts.md": {
+      "sha256": "66a574826b46352275606d88a9854a0e63c39433a97a55c75f50ccc0f4862a15",
+      "source": "profiles/revealfleet/revealui/rules/temp-scripts.md"
+    },
+    "content/rules/token-economy.md": {
+      "sha256": "5746f5fa868589c21cf232b39302bd9cd995199d8d575bfded3ea174d23c6c46",
+      "source": "profiles/revealfleet/revealui/rules/token-economy.md"
+    }
+  },
+  "mode": "copy",
+  "profiles": [
+    "revealfleet"
+  ]
+}

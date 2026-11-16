@@ -1,5 +1,5 @@
 ---
-name: coordinate
+name: revealui-coordinate
 description: >
   Live peer coordination packet for Grok Build (and equal adapters).
   Use when the user runs /coordinate, asks to coordinate with peers,
@@ -9,15 +9,15 @@ description: >
   Not /checkpoint (session-end archive). Not /pickup. Not grok-bot-handoff
   (cloud bots; use --bots to print a facts block for that skill).
 license: MIT
-allowed-tools: Bash, Read, Write
+compatibility: RevealFleet Studio layout at REVEALFLEET_ROOT; executable helpers require Node.js 24+ and pnpm 10 when invoked.
+allowed-tools: Bash Read Write
 metadata:
+  pack: studio
+  alias: coordinate
   author: RevealUI Studio
-  version: "0.1.0"
+  version: "0.1.1"
   website: https://revealui.com
-  related:
-    - revealui-checkpoint
-    - revealui-snapshot
-    - grok-bot-handoff
+  related: "revealui-checkpoint revealui-snapshot grok-bot-handoff"
 ---
 
 # Coordinate (`/coordinate`) — live peer packet

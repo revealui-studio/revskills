@@ -25,7 +25,7 @@ set -euo pipefail
 
 TARGET=""
 DOT=".claude"
-MATERIALIZED_SUBDIRS=(rules agents skills)
+MATERIALIZED_SUBDIRS=(rules agents skills commands)
 
 usage() {
   cat <<'EOF'
@@ -58,13 +58,14 @@ if [[ ! -d "$TARGET" ]]; then
   exit 2
 fi
 
+[[ "$DOT" == ".revealui" ]] && MATERIALIZED_SUBDIRS=(content/rules content/agents content/skills content/commands)
 TARGET="$(cd "$TARGET" && pwd)"
 MANIFEST="$TARGET/$DOT/.revcon-manifest.json"
 
 if [[ ! -f "$MANIFEST" ]]; then
   echo "✗ missing $DOT/.revcon-manifest.json" >&2
   echo "  Materialize with revcon:" >&2
-  echo "    bash "$REVEALFLEET_ROOT/revcon/link.sh" --target $TARGET --profile revealfleet --editor claude --mode copy" >&2
+  echo "    bash ~/revealfleet/revcon/link.sh --target $TARGET --profile revealfleet --mode copy" >&2
   exit 1
 fi
 
@@ -84,9 +85,37 @@ if ! jq -e '.files | type == "object"' "$MANIFEST" >/dev/null 2>&1; then
   exit 1
 fi
 
+# Native manifests describe only first-party content, never vendor aliases or
+# arbitrary paths. Validate before any file reads or hash comparisons.
+if [[ "$DOT" == ".revealui" ]]; then
+  if ! jq -se '
+    length == 1 and (.[0].editor == "revealui") and
+    all(.[0].files | to_entries[];
+      (.key | startswith("content/rules/") or startswith("content/agents/") or
+        startswith("content/skills/") or startswith("content/commands/")) and
+      (.key | split("/") | all(.[]; length > 0 and . != "." and . != "..")) and
+      (.key | test("[[:cntrl:]]") | not) and
+      (.value.source | type == "string" and contains("/revealui/")) and
+      (.value.sha256 | type == "string" and test("^[0-9a-f]{64}$")))
+  ' "$MANIFEST" >/dev/null 2>&1; then
+    echo "✗ invalid first-party RevealUI manifest" >&2
+    exit 1
+  fi
+fi
+
 hash_file() {
-  sha256sum "$1" | awk '{print $1}'
+  sha256sum < "$1" | awk '{print $1}'
 }
+
+if ! jq -e '
+  all(.files | keys[];
+    (startswith("/") | not) and
+    (test("[[:cntrl:]]") | not) and
+    (split("/") | all(.[]; length > 0 and . != "." and . != "..")))
+' "$MANIFEST" >/dev/null 2>&1; then
+  echo "✗ manifest path escapes $DOT" >&2
+  exit 1
+fi
 
 problems=0
 count=0
@@ -98,6 +127,12 @@ while IFS=$'\t' read -r rel src want; do
   file_rel="$DOT/$rel"
   manifest_paths["$file_rel"]=1
   abs="$TARGET/$DOT/$rel"
+  resolved="$(realpath -m -- "$abs")"
+  if [[ "$resolved" != "$TARGET/$DOT/"* ]]; then
+    echo "  $file_rel — path escapes the editor directory" >&2
+    problems=$((problems + 1))
+    continue
+  fi
   if [[ ! -e "$abs" ]]; then
     echo "  $file_rel — missing on disk (manifest source: $src)" >&2
     problems=$((problems + 1))
@@ -114,12 +149,49 @@ while IFS=$'\t' read -r rel src want; do
     continue
   fi
   have="$(hash_file "$abs")"
+  if [[ "$src" == harnesses:* ]]; then
+    content_root="$(jq -r '.contentRoot // "content"' "$TARGET/.revealui/manager.json" 2>/dev/null || echo content)"
+    canonical="$TARGET/.revealui/$content_root/$rel"
+    expected_source="harnesses:$rel"
+    if [[ "$rel" == "rules/00-revealui-manager.md" ]]; then
+      expected_source="harnesses:adapters/claude-code.md"
+      canonical="$TARGET/.revealui/adapters/claude-code.md"
+    fi
+    if [[ "$DOT" != ".claude" || "$rel" != rules/*.md || "${rel#rules/}" == */* || "$src" != "$expected_source" || ! -f "$canonical" || -L "$canonical" || "$(realpath -m -- "$canonical")" != "$canonical" || "$(hash_file "$canonical")" != "$have" ]]; then
+      echo "  $file_rel — invalid harness ownership or drift from manager content" >&2
+      problems=$((problems + 1))
+    fi
+  fi
   if [[ "$have" != "$want" ]]; then
     echo "  $file_rel — content differs from the manifest (locally edited?)." >&2
     echo "    Edit the revcon profile ($src), then re-run link.sh --mode copy." >&2
     problems=$((problems + 1))
   fi
 done < <(jq -r '.files | to_entries[] | [.key, .value.source, .value.sha256] | @tsv' "$MANIFEST")
+
+# Native Codex artifacts have one separate owner: the harness materializer.
+# Validate that ownership rather than treating its tracked files as strays.
+if [[ "$DOT" == ".agents" && -f "$TARGET/.revealui/adapters/codex-files.json" ]]; then
+  harness_manifest="$TARGET/.revealui/adapters/codex-files.json"
+  if [[ -L "$harness_manifest" ]] || ! jq -e '.version == 1 and (.files | type == "object")' "$harness_manifest" >/dev/null; then
+    echo "Invalid native Codex ownership manifest" >&2
+    exit 1
+  fi
+  while IFS=$'\t' read -r file_rel want; do
+    if [[ "$file_rel" != .agents/skills/* || "$file_rel" == */../* || "$file_rel" =~ [[:cntrl:]] || -n "${manifest_paths[$file_rel]+x}" ]]; then
+      echo "Invalid or multiply owned native skill path: $file_rel" >&2
+      problems=$((problems + 1))
+      continue
+    fi
+    manifest_paths["$file_rel"]=1
+    abs="$TARGET/$file_rel"
+    resolved="$(realpath -m -- "$abs")"
+    if [[ "$resolved" != "$TARGET/"* || ! -f "$abs" || -L "$abs" || "$resolved" != "$abs" || "$(hash_file "$abs")" != "$want" ]]; then
+      echo "Missing, linked, or modified native skill: $file_rel" >&2
+      problems=$((problems + 1))
+    fi
+  done < <(jq -r '.files | to_entries[] | [.key, .value] | @tsv' "$harness_manifest")
+fi
 
 # Strays: git-tracked under materialized dirs but not in the manifest
 if git -C "$TARGET" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
@@ -143,7 +215,7 @@ profiles="$(jq -r '.profiles | join(", ")' "$MANIFEST" 2>/dev/null || echo "?")"
 
 if (( problems > 0 )); then
   echo "✗ copy-lockstep: $problems violation(s) ($count manifest entr(y/ies), profiles: $profiles)" >&2
-  echo "  Re-apply: bash "$REVEALFLEET_ROOT/revcon/link.sh" --target $TARGET --editor claude --mode copy --profile …" >&2
+  printf '  Re-apply: bash "$REVEALFLEET_ROOT/revcon/link.sh" --target %q --mode copy --profile revealfleet\n' "$TARGET" >&2
   exit 1
 fi
 

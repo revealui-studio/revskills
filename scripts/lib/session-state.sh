@@ -31,6 +31,7 @@ DAEMON_SOCKET="${REVEALUI_SOCKET:-${DAEMON_SOCKET:-$HOME/.local/share/revealui/h
 REVEALUI_COORD_ROOT="${REVEALUI_COORD_ROOT:-$HOME/.local/share/revealui/coordination}"
 # Legacy Claude adapter path (read-through only after neutral).
 REVEALUI_COORD_LEGACY_CLAUDE="${REVEALUI_COORD_LEGACY_CLAUDE:-$HOME/.claude/coordination}"
+SS_SNAPSHOT_FILES="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/snapshot-files.mts"
 
 # ---------------------------------------------------------------------------
 # Identity
@@ -38,7 +39,7 @@ REVEALUI_COORD_LEGACY_CLAUDE="${REVEALUI_COORD_LEGACY_CLAUDE:-$HOME/.claude/coor
 
 ss_valid_identity() {
   local id="${1:-}"
-  [[ ${#id} -le 64 && "$id" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]
+  [ ${#id} -le 64 ] && ss_valid_session_id "$id"
 }
 
 ss_identity() {
@@ -54,16 +55,13 @@ ss_identity() {
     printf '%s\n' "$CLAUDE_AGENT_ROLE"
     return 0
   fi
-  # This process only. A newer file planted in /tmp must not win, and the
-  # line is a label, not a grep pattern or a command.
-  local cache id
-  cache="/tmp/revealui-session-${PPID}.id"
-  if [ -f "$cache" ] && [ -s "$cache" ]; then
-    id="$(head -1 "$cache")"
-    if ss_valid_identity "$id"; then
-      printf '%s\n' "$id"
-      return 0
-    fi
+  # A process-bound stamp can carry the role. Global /tmp caches cannot.
+  local stamp id
+  stamp="$(ss_own_session_stamp 2>/dev/null)" || stamp=""
+  id="${stamp#*$'\t'}"
+  if [ "$stamp" != "$id" ] && ss_valid_identity "$id"; then
+    printf '%s\n' "$id"
+    return 0
   fi
   printf 'stagehand\n'
 }
@@ -76,7 +74,7 @@ ss_identity() {
 #   2. Native aliases: CODEX_THREAD_ID (preferred), CODEX_SESSION_ID,
 #      CLAUDE_CODE_SESSION_ID, GROK_SESSION_ID
 #   3. PPID stamp files written by SessionStart (scripts/stamp-session-id.sh)
-#   4. Grok ~/.grok/active_sessions.json matched by nearest ancestor PID only
+#   No cwd-only or PID-only registry fallback (PID reuse is ambiguous).
 #
 # Snapshot write requires a value. Checkpoint consume may be empty (memory).
 # ---------------------------------------------------------------------------
@@ -84,8 +82,7 @@ ss_identity() {
 # IDs become filenames. Reject invalid authoritative values rather than falling
 # through to a peer's discovery entry. Keep parity with the hook's safe IDs.
 ss_valid_session_id() {
-  local sid="${1:-}"
-  [[ ${#sid} -le 128 && "$sid" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]
+  node "$SS_SNAPSHOT_FILES" valid-id "${1:-}" >/dev/null 2>&1
 }
 
 # Collect ancestor PIDs of a process (inclusive), space-separated. Arg: start pid.
@@ -100,81 +97,67 @@ ss_ancestor_pids() {
   printf '%s\n' "$pids"
 }
 
-# Stamp files: $REVEALUI_COORD_ROOT/harness-sessions/by-pid/<pid> → session id
-ss_session_id_from_pid_stamps() {
-  local root="$REVEALUI_COORD_ROOT/harness-sessions/by-pid"
-  [ -d "$root" ] || return 1
-  local pid sid
-  # shellcheck disable=SC2046
-  for pid in $(ss_ancestor_pids "$$"); do
-    if [ -f "$root/$pid" ] && [ -s "$root/$pid" ]; then
-      sid="$(head -1 "$root/$pid")"
-      if ss_valid_session_id "$sid"; then
-        printf '%s\n' "$sid"
-        return 0
-      fi
-    fi
-  done
-  return 1
-}
+# Stamps bind a session and role to one owning harness PID plus its kernel
+# process start time. A stale PID or a shared ancestor cannot name this session.
+ss_own_session_stamp() {
+  local stamp_dir
+  stamp_dir="$(node "$SS_SNAPSHOT_FILES" stamp-dir-read "$REVEALUI_COORD_ROOT" 2>/dev/null)" || return 1
+  python3 - "$stamp_dir" "$$" <<'PY'
+import json, pathlib, sys
 
-# Grok active_sessions.json: nearest process-bound match only. Sharing a cwd
-# proves nothing about session ownership, even when the registry has one row.
-ss_session_id_from_grok_active() {
-  local active="${GROK_ACTIVE_SESSIONS:-$HOME/.grok/active_sessions.json}"
-  [ -f "$active" ] || return 1
-  command -v python3 >/dev/null 2>&1 || return 1
-  # shellcheck disable=SC2086
-  python3 - "$active" "$$" <<'PY'
-import json, re, sys
+root = pathlib.Path(sys.argv[1])
+pid = int(sys.argv[2])
+allowed = {"claude", "grok", "codex", "opencode", "cursor", "cursor-agent"}
 
-path, start_s = sys.argv[1], sys.argv[2]
-start = int(start_s)
-pids = []
-pid = start
+def valid(value, limit):
+    if not isinstance(value, str) or not 1 <= len(value) <= limit:
+        return False
+    for index, char in enumerate(value):
+        if char.isascii() and char.isalnum():
+            continue
+        if index and char in "._-":
+            continue
+        return False
+    return True
+
 for _ in range(40):
-    pids.append(pid)
     try:
-        with open(f"/proc/{pid}/status", encoding="utf-8") as fh:
-            ppid = None
-            for line in fh:
-                if line.startswith("PPid:"):
-                    ppid = int(line.split()[1])
-                    break
-        if ppid is None or ppid <= 1:
-            break
-        pid = ppid
-    except OSError:
-        break
-
-try:
-    sessions = json.loads(open(path, encoding="utf-8").read())
-except (OSError, json.JSONDecodeError):
-    sys.exit(1)
-if not isinstance(sessions, list):
-    sys.exit(1)
-
-for pid in pids:
-    matches = set()
-    for s in sessions:
-        if not isinstance(s, dict):
-            continue
-        try:
-            if int(s.get("pid", -1)) != pid:
-                continue
-        except (TypeError, ValueError):
-            continue
-        sid = s.get("session_id")
-        if not isinstance(sid, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", sid):
+        proc = pathlib.Path(f"/proc/{pid}")
+        stat = (proc / "stat").read_text()
+        tail = stat[stat.rfind(")") + 2:].split()
+        start = tail[19]
+        parent = int(tail[1])
+        command = (proc / "comm").read_text().strip()
+        stamp_path = root / str(pid)
+        if stamp_path.exists() or stamp_path.is_symlink():
+            if stamp_path.is_symlink() or not stamp_path.is_file():
+                sys.exit(1)
+            stamp = json.loads(stamp_path.read_text())
+            sid = stamp.get("sid")
+            identity = stamp.get("identity") or ""
+            if command not in allowed or stamp.get("start") != start or stamp.get("command") != command:
+                sys.exit(1)
+            if not valid(sid, 128) or (identity and not valid(identity, 64)):
+                sys.exit(1)
+            print(f"{sid}\t{identity}")
+            sys.exit(0)
+        # The nearest harness process is the ownership boundary. A nested
+        # session cannot inherit an outer harness's stamp when it has none.
+        if command in allowed:
             sys.exit(1)
-        matches.add(sid)
-    if len(matches) > 1:
+        if parent <= 1:
+            break
+        pid = parent
+    except (OSError, ValueError, IndexError, json.JSONDecodeError):
         sys.exit(1)
-    if matches:
-        print(matches.pop())
-        sys.exit(0)
 sys.exit(1)
 PY
+}
+
+ss_session_id_from_pid_stamps() {
+  local stamp
+  stamp="$(ss_own_session_stamp)" || return 1
+  printf '%s\n' "${stamp%%$'\t'*}"
 }
 
 ss_session_id() {
@@ -191,10 +174,8 @@ ss_session_id() {
     printf '%s\n' "$sid"
     return 0
   }
-  sid="$(ss_session_id_from_grok_active 2>/dev/null)" && {
-    printf '%s\n' "$sid"
-    return 0
-  }
+  # Grok's cwd/PID registry has no kernel process-start binding. SessionStart
+  # stamps or an explicit native alias must establish identity instead.
   return 1
 }
 
@@ -211,12 +192,12 @@ ss_snap_dir() {
 }
 
 ss_snap_archive_dir() {
-  printf '%s\n' "$REVEALUI_COORD_ROOT/snapshots/archive"
+  node "$SS_SNAPSHOT_FILES" archive-dir "$REVEALUI_COORD_ROOT"
 }
 
 ss_ensure_coord_dirs() {
-  mkdir -p "$REVEALUI_COORD_ROOT/snapshots/archive" \
-    "$REVEALUI_COORD_ROOT/harness-sessions/by-pid"
+  node "$SS_SNAPSHOT_FILES" archive-dir "$REVEALUI_COORD_ROOT" >/dev/null || return 1
+  node "$SS_SNAPSHOT_FILES" stamp-dir "$REVEALUI_COORD_ROOT" >/dev/null
 }
 
 # branches.json: prefer neutral SSOT; fall back to legacy Claude path if present.
@@ -246,17 +227,8 @@ ss_snapshot_path() {
   fi
   ss_valid_session_id "$sid" || return 1
 
-  local candidates=(
-    "$REVEALUI_COORD_ROOT/snapshots/$sid.md"
-    "$REVEALUI_COORD_LEGACY_CLAUDE/snapshots/$sid.md"
-  )
-  local p
-  for p in "${candidates[@]}"; do
-    if [ -f "$p" ]; then
-      printf '%s\n' "$p"
-      return 0
-    fi
-  done
+  node "$SS_SNAPSHOT_FILES" path-read "$REVEALUI_COORD_ROOT" "$sid" 2>/dev/null && return 0
+  node "$SS_SNAPSHOT_FILES" path-read "$REVEALUI_COORD_LEGACY_CLAUDE" "$sid" 2>/dev/null && return 0
   return 1
 }
 
@@ -267,8 +239,7 @@ ss_snapshot_write_path() {
     sid="$(ss_session_id 2>/dev/null)" || return 1
   fi
   ss_valid_session_id "$sid" || return 1
-  ss_ensure_coord_dirs
-  printf '%s\n' "$REVEALUI_COORD_ROOT/snapshots/$sid.md"
+  node "$SS_SNAPSHOT_FILES" path-write "$REVEALUI_COORD_ROOT" "$sid"
 }
 
 # ---------------------------------------------------------------------------
@@ -344,7 +315,8 @@ ss_workboard_read_path() {
     return 0
   fi
   if [ -n "${WORKBOARD_ADAPTER_CLAUDE:-}" ] && [ -f "$WORKBOARD_ADAPTER_CLAUDE" ] \
-    && [ "${WORKBOARD_ADAPTER_CLAUDE}" != "${WORKBOARD:-}" ]; then
+    && [ "${WORKBOARD_ADAPTER_CLAUDE}" != "${WORKBOARD:-}" ] \
+    && grep -Fq '## Log' "$WORKBOARD_ADAPTER_CLAUDE"; then
     printf '%s\n' "$WORKBOARD_ADAPTER_CLAUDE"
     return 0
   fi

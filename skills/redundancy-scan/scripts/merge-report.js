@@ -12,7 +12,7 @@ const path = require("path");
 const { parseArgs, ensureDirFor } = require("./lib.js");
 
 function loadJsonl(file) {
-  if (!fs.existsSync(file)) return [];
+  if (!fs.statSync(file).isFile()) throw new Error(`Missing regular detector input: ${file}`);
   const rows = [];
   for (const line of fs.readFileSync(file, "utf8").split("\n")) {
     if (!line.trim()) continue;
@@ -31,16 +31,19 @@ function main() {
   }
 
   const outDir = path.resolve(args["out-dir"]);
-  const inputs = String(args.inputs)
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
+  const inputs = String(args.inputs).startsWith("[") ? JSON.parse(args.inputs) : String(args.inputs).split(",").map((s) => s.trim()).filter(Boolean);
+  if (!Array.isArray(inputs) || !inputs.length || !inputs.every((p) => typeof p === "string" && p)) throw new Error("Nonempty detector inputs required");
 
   const all = [];
   for (const inp of inputs) {
     all.push(...loadJsonl(inp));
   }
 
+  const ids = new Set();
+  for (const row of all) {
+    if (!row || typeof row.id !== "string" || !row.id || ids.has(row.id)) throw new Error("Invalid or duplicate finding ID");
+    ids.add(row.id);
+  }
   const byClass = {};
   for (const f of all) {
     byClass[f.class] = (byClass[f.class] || 0) + 1;

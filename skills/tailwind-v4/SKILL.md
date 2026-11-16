@@ -2,10 +2,12 @@
 name: tailwind-v4
 description: Tailwind CSS v4 patterns, CSS-first configuration, and v3 migration guide. Use when writing styles, configuring @theme variables, creating components with CVA, migrating from tailwind.config.js, or using container queries, dark mode, and new v4 utility syntax. Covers @import tailwindcss, custom properties, oklch colors, and clsx.
 license: MIT
-allowed-tools: Read, Grep, Glob
+compatibility: Any Agent Skills host; examples require the framework packages named in this skill.
+allowed-tools: Read Grep Glob
 metadata:
+  pack: public
   author: RevealUI Studio
-  version: "0.1.1"
+  version: "0.1.2"
   website: https://revealui.com
 ---
 
@@ -95,11 +97,22 @@ Tailwind v4 uses CSS instead of JavaScript for configuration:
 }
 ```
 
-Or use the `dark:` variant:
+Or use the `dark:` variant with separately declared light and dark tokens:
+
+```css
+@theme {
+  --color-surface: #ffffff;
+  --color-surface-dark: #1a1a2e;
+  --color-text: #1a1a2e;
+  --color-text-light: #e5e5e5;
+}
+```
 
 ```tsx
-<div className="bg-surface dark:bg-surface-dark text-text dark:text-text-light">
+<div className="bg-surface text-text dark:bg-surface-dark dark:text-text-light">
 ```
+
+The media-query variable override above is an alternative to this `dark:` variant example; use one strategy consistently.
 
 ## New v4 Syntax
 
@@ -110,7 +123,7 @@ Or use the `dark:` variant:
 </div>
 
 // Arbitrary theme values
-<div className="bg-(--color-brand/50)">50% opacity brand</div>
+<div className="bg-(--color-brand)/50">50% opacity brand</div>
 
 // Nested groups
 <div className="group/card">

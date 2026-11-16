@@ -8,7 +8,7 @@
 "use strict";
 
 const path = require("path");
-const { parseArgs, loadConfig, walkFiles, writeJsonl } = require("./lib.js");
+const { parseArgs, loadConfig, walkScope, findingId, writeJsonl } = require("./lib.js");
 
 function main() {
   const args = parseArgs(process.argv);
@@ -20,9 +20,6 @@ function main() {
   }
 
   const cfg = loadConfig(args.config);
-  const excludeSet = new Set(cfg.excludeDirNames || []);
-  const textExtSet = new Set(cfg.textExtensions || []);
-  const maxBytes = cfg.maxFileBytes || 1_500_000;
   const min = Number(args.min) || 2;
   const rootAbs = path.resolve(args.root);
   const prefix = args.prefix || "";
@@ -47,7 +44,7 @@ function main() {
   ]);
 
   const byBase = new Map();
-  walkFiles(rootAbs, "", excludeSet, textExtSet, maxBytes, ({ rel }) => {
+  walkScope(args, cfg, ({ rel }) => {
     const base = path.basename(rel);
     if (allow.has(base)) return;
     if (!byBase.has(base)) byBase.set(base, []);
@@ -55,13 +52,11 @@ function main() {
   });
 
   const findings = [];
-  let id = 0;
   for (const [base, paths] of byBase) {
     if (paths.length < min) continue;
     // ignore if all under same parent type e.g. many route.ts already filtered
-    id++;
     findings.push({
-      id: `NAME-${String(id).padStart(4, "0")}`,
+      id: findingId("NAME", [base, [...paths].sort()]),
       class: "basename-collision",
       severity: "info",
       title: `Same basename in ${paths.length} places: ${base}`,

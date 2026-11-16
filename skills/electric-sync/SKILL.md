@@ -2,10 +2,12 @@
 name: electric-sync
 description: ElectricSQL v1.x real-time sync patterns for PostgreSQL. Use when setting up shape subscriptions, authenticated proxy routes, mutation endpoints, offline-first sync, or connecting Electric to Neon. Covers read-only sync, row-level filtering, write-through-API, and conflict resolution.
 license: MIT
-allowed-tools: Read, Grep, Glob
+compatibility: Agent Skills host; executable TypeScript examples require Node.js 24+, pnpm 10 and the dependencies in the revskills package manifest.
+allowed-tools: Read Grep Glob
 metadata:
+  pack: public
   author: RevealUI Studio
-  version: "0.1.1"
+  version: "0.1.2"
   website: https://revealui.com
 ---
 
@@ -24,30 +26,25 @@ Postgres (Neon/Supabase) --> Electric (sync service) --> Clients (HTTP shapes)
 
 ## Shape Proxy Route (Next.js)
 
-Authenticated proxy that adds row-level filtering before forwarding to Electric:
+[`examples/shape-proxy.mts`](examples/shape-proxy.mts) is an executable route helper. The caller may request a scope, but the server must check that the authenticated user can read it **on every shape request**. The proxy forwards only Electric protocol parameters, sets the table itself, and uses Electric's parameterized `where` binding. No handwritten character whitelist or SQL interpolation is needed. The official [Electric proxy example](https://github.com/electric-sql/electric/blob/main/examples/proxy-auth/app/shape-proxy/route.ts) uses the same protocol allowlist and parameter binding.
 
 ```typescript
-import { prepareElectricUrl, proxyElectricRequest } from '@/lib/api/electric-proxy';
-
-export async function GET(request: NextRequest): Promise<NextResponse> {
-  const session = await getSession(request.headers);
-  if (!session) return unauthorized();
-
-  const scopeId = new URL(request.url).searchParams.get('scope_id');
-  if (!scopeId || !/^[a-zA-Z0-9_-]+$/.test(scopeId)) return validationError();
-
-  const originUrl = prepareElectricUrl(request.url);
-  originUrl.searchParams.set('table', 'your_table');
-  originUrl.searchParams.set('where', `scope_id = '${scopeId}'`);
-
-  return proxyElectricRequest(originUrl);
+const session = await authenticate(request);
+if (!session) return new Response('Unauthorized', { status: 401 });
+const scopeId = new URL(request.url).searchParams.get('scope_id');
+if (!scopeId || !(await canReadScope(session.user.id, scopeId))) {
+  return new Response('Forbidden', { status: 403 });
 }
+const origin = new URL('/v1/shape', electricUrl);
+for (const [key, value] of new URL(request.url).searchParams) {
+  if (ELECTRIC_PROTOCOL_QUERY_PARAMS.includes(key)) origin.searchParams.set(key, value);
+}
+origin.searchParams.set('table', 'your_table');
+origin.searchParams.set('where', 'scope_id = $1');
+origin.searchParams.set('params[1]', scopeId);
 ```
 
-Key points:
-- Always validate and sanitize WHERE clause inputs (alphanumeric, UUID regex)
-- Set `export const dynamic = 'force-dynamic'` and `export const runtime = 'nodejs'`
-- Use `force-dynamic` to prevent Next.js from caching the proxy response
+The helper removes stale `content-encoding` and `content-length` headers after `fetch` decompresses the upstream response. It sends `Cache-Control: private, no-store` and varies on both Cookie and Authorization so an upstream public cache header cannot expose a tenant shape through a shared cache. Keep the Electric service secret server-side.
 
 ## Mutation Route (Write Path)
 
@@ -118,21 +115,7 @@ const { data, isLoading } = useShape({
 
 ## Row-Level Security
 
-All filtering happens server-side in the proxy route. Never trust client-provided WHERE clauses:
-
-```typescript
-// Good: server derives the filter from the authenticated session.
-// The id is allowlisted before it is interpolated. A quote in the id
-// must not break out of the Electric where clause.
-const userId = session.user.id;
-if (!/^[a-zA-Z0-9_-]+$/.test(userId)) {
-  throw new Error('invalid session user id');
-}
-originUrl.searchParams.set('where', `user_id = '${userId}'`);
-
-// Bad: client controls the filter
-originUrl.searchParams.set('where', request.searchParams.get('filter'));
-```
+Electric shape filtering is set in the authenticated proxy. A filter limits **which rows stream**; it does not authorize a caller on its own. Check membership for client-requested scopes, derive the authorized identifier from the session when possible, and bind it through `params[1]` instead of concatenating a WHERE string. Apply the same rule to fact shapes and other session-scoped subscriptions.
 
 ## Conflict Resolution
 

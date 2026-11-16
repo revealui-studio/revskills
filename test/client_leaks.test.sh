@@ -1,16 +1,13 @@
 #!/usr/bin/env bash
-# scripts/check-client-leaks.sh — unconditional client-name scan.
-#
-# The banned name is assembled from fragments. CI scans this file, so a
-# committed literal would fail the client-leak job on its own test.
-
+# Public tests use only fabricated rule data, kept outside the candidate tree.
 test_client_leak_flags_bare_name_in_changelog() {
-  local sandbox name tag
+  local sandbox config
   sandbox="$(make_sandbox)"
-  name="Bio""tix notes"
-  printf '%s\n' "$name" >"$sandbox/CHANGELOG.md"
+  config="$(make_sandbox)/rules.json"
+  printf '%s\n' '[{"id":"rule-001","literal":"FictionalClientCanary"}]' > "$config"
+  chmod 600 "$config"
+  printf '%s\n' 'FictionalClientCanary notes' > "$sandbox/CHANGELOG.md"
   assert_exit "CHANGELOG is not excluded from the client scan" 1 \
-    -- bash "$REPO_ROOT/scripts/check-client-leaks.sh" "$sandbox"
-  tag="CLIENT-LEAK:venture-bio""tix-bare"
-  assert_contains "bare venture name is tagged" "$tag" "$LAST_OUTPUT"
+    -- bash "$REPO_ROOT/scripts/check-client-leaks.sh" --rules "$config" "$sandbox"
+  assert_contains "only the opaque rule identifier is emitted" '"rule":"rule-001"' "$LAST_OUTPUT"
 }

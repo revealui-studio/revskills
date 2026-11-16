@@ -2,10 +2,12 @@
 name: next-best-practices
 description: Next.js 15+ App Router best practices for pages, layouts, routes, server components, server actions, caching, API routes, and streaming. Use when building or reviewing Next.js code, implementing RSC patterns, PPR, metadata, error boundaries, or proxy.ts. Covers React 19 conventions, data fetching, ISR, and common mistakes.
 license: MIT
-allowed-tools: Read, Grep, Glob
+compatibility: Any Agent Skills host; examples require the framework packages named in this skill.
+allowed-tools: Read Grep Glob
 metadata:
+  pack: public
   author: RevealUI Studio
-  version: "0.1.1"
+  version: "0.1.2"
   website: https://revealui.com
 ---
 
@@ -53,10 +55,10 @@ import { revalidatePath, revalidateTag } from 'next/cache';
 
 ## Partial Prerendering (PPR)
 
-- Enable in `next.config.ts`: `experimental: { ppr: true }`
-- Static shell renders instantly, dynamic parts stream in
-- Use `<Suspense>` boundaries to mark dynamic regions
-- No code changes needed — just wrap dynamic content in Suspense
+- **Next.js 16+:** enable `cacheComponents: true` in `next.config.ts`. Cache reusable work with `use cache`; place request-time work behind a `<Suspense>` boundary so the static shell can stream first.
+- **Next.js 15 canary only:** `experimental: { ppr: true }` is the earlier experimental flag. It was removed in Next.js 16.
+- Check the route's dynamic APIs and cache boundaries; wrapping arbitrary content in Suspense alone does not make it a PPR route.
+- Source: https://nextjs.org/docs/app/guides/upgrading/version-16
 
 ## Metadata
 
@@ -100,10 +102,11 @@ import Image from 'next/image';
   alt="Description"
   width={1200}
   height={630}
-  priority // above the fold
-  placeholder="blur"
+  // A string src needs blurDataURL if placeholder="blur" is used.
 />
 ```
+
+For a blur placeholder, statically import a supported image or supply a small `blurDataURL` with the string source. Next.js 16 prefers `preload` for critical images; earlier releases used `priority`. See https://nextjs.org/docs/messages/placeholder-blur-data-url and https://nextjs.org/docs/app/api-reference/components/image.
 
 ## Common Mistakes to Avoid
 

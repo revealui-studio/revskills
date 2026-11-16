@@ -8,15 +8,14 @@ description: >
   audit, find duplicates, dead dual implementations, deprecated code still shipping,
   or extend-before-create consolidation passes.
 license: MIT
-allowed-tools: Bash, Read, Grep, Glob, Write, Edit
+compatibility: Agent Skills host with Node.js 24+ and local filesystem access for CLI helpers. Fleet mode requires a RevealFleet directory layout.
+allowed-tools: Bash Read Grep Glob Write Edit
 metadata:
+  pack: public
   author: RevealUI Studio
-  version: "0.1.1"
+  version: "0.1.2"
   website: https://revealui.com
-  related:
-    - exhaustive-audit
-    - knowledge-graph
-    - extend-before-create
+  related: "exhaustive-audit knowledge-graph extend-before-create"
 ---
 
 # Redundancy / deprecation / duplication scan
@@ -125,7 +124,7 @@ Append classifications to `classified/decisions.jsonl`:
 
 ```json
 {
-  "id": "DUP-EXACT-0001",
+  "id": "DUP-EXACT-<deterministic-sha256>",
   "classification": "accidental",
   "action": "gap|pr|leave",
   "gap": null,

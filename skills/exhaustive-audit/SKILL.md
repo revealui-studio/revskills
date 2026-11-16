@@ -9,16 +9,14 @@ description: >
   verification, multi-agent audit, fleet-wide audit, "account for every file/line",
   or a brutally honest per-repo product assessment (Phase 0).
 license: MIT
-allowed-tools: Bash, Read, Grep, Glob, Write, Edit
+compatibility: Agent Skills host with Node.js 24+ and local filesystem access for CLI helpers. Fleet mode requires a RevealFleet directory layout.
+allowed-tools: Bash Read Grep Glob Write Edit
 metadata:
+  pack: public
   author: RevealUI Studio
-  version: "0.2.2"
+  version: "0.2.3"
   website: https://revealui.com
-  related:
-    - knowledge-graph
-    - multi-agent-memory
-    - revealui-checkpoint
-    - security-hardening
+  related: "knowledge-graph multi-agent-memory revealui-checkpoint security-hardening"
 ---
 
 # Exhaustive audit framework
@@ -28,7 +26,7 @@ metadata:
 A monorepo cannot fit every line into one model context. Completeness is **machine-checked**:
 
 1. **Inventory** — every on-disk path under scope is listed (hash, bytes, line count).
-2. **Coverage ledger** — every path reaches a terminal status (`verified` | `finding` | `waived` | `blocked`).
+2. **Coverage ledger** — every path reaches a terminal status (`verified` | `finding` | `waived` with required evidence; `blocked` remains incomplete).
 3. **Line accountability** — for each file, the auditor records that the full content was read (or a mechanical verifier covered it), with start/end line counts matching the manifest.
 4. **No silent skip** — uncovered paths at close are a **failed audit**, not a soft miss.
 
@@ -101,7 +99,7 @@ node "$SKILL/scripts/coverage-status.js" \
   --mode code
 ```
 
-Fleet `--fleet` walks only `DEFAULT_FLEET_REPOS` in `scripts/lib/fleet-scope.js`, including `revmind` and fleet-root `docs/`. It skips `archive/`, `tmp/`, `scripts/`, hidden dirs except `.jv`, and worktree-style names. Cold archive is opt-in: `--include-archive`. Override the allowlist with `--repos a,b`. `--mode md-truth` inventories `*.md` and `*.mdx` only.
+Fleet `--fleet` walks only `DEFAULT_FLEET_REPOS` in `scripts/lib/fleet-scope.js`, including `revmind` and fleet-root `docs/`. It skips `archive/`, `tmp/`, `scripts/`, hidden dirs except `.jv`, and worktree-style names. Cold archive is opt-in: `--include-archive`. All declared components must exist as directories; missing default or explicit components fail inventory. Override the scope with `--repos a,b` to select a deliberate subset. `--mode md-truth` inventories `*.md` and `*.mdx` only.
 
 ## Multi-session protocol
 
@@ -161,7 +159,7 @@ For each path in the shard (from `shards.json` / claim file):
   "status": "verified",
   "lines_read": [1, 240],
   "manifest_lines": 240,
-  "sha256": "<recomputed from the content read>",
+  "read_sha256": "<SHA-256 recomputed from the pinned bytes actually read>",
   "agent": "grok-audit-3",
   "session": "…",
   "ts": "2026-07-22T18:00:00Z",
@@ -169,18 +167,31 @@ For each path in the shard (from `shards.json` / claim file):
 }
 ```
 
-For text files, a supplied `lines_read` must be exactly `[1, manifest.lines]`,
-with integer bounds. Empty text (`lines: 0`) permits omission or `[0, 0]`;
-binary manifests use `lines: null`. A `blocked` row may record a partial read.
-Code-mode `verified` rows for nonempty text require the full span.
+Coverage validates the readable inventory, every pinned snapshot digest and every
+receipt's `read_sha256` by default. `--check-hash` remains a compatibility alias;
+there is no unhashed completion mode. Copying a manifest digest into a receipt
+is not read provenance. The gate checks declarations and bytes; it cannot prove
+that an auditor understood the content.
 
-With `--check-hash`, both the manifest hash and declared read hash must be
-nonempty strings and match. The validator uses `read_sha256` when that field
-is present, otherwise the legacy `sha256` receipt field. An invalid explicit
-`read_sha256` cannot fall back to `sha256`. Compute the receipt hash from the
-content read; copying the manifest hash does not establish read provenance.
-The flag compares declared hashes and cannot independently prove that the
-auditor read the content.
+Every completed text receipt requires integer `lines_read` exactly
+`[1, manifest.lines]`, or `[0, 0]` for empty files, plus matching
+`manifest_lines`, `read_sha256` and a nonempty `agent`. Binary files use
+`manifest_lines: null` and require a nonempty `review_method` explaining their
+inspection. Missing manifests, duplicate paths, corrupt snapshots and incomplete
+inventory records fail. An intentionally empty scope requires `--allow-empty`.
+
+`finding` references must resolve to this path in the findings ledger (default:
+`findings.jsonl` beside the coverage ledger; override with `--findings`). A waiver
+requires `waiver: {"owner": "…", "reason": "…"}`. Generated dispositions require
+`--generated-allowlist <JSON file>` containing exact relative paths and a
+`generated_evidence` receipt. Markdown truth dispositions additionally require
+`review_evidence`. Blocked paths remain accounted but cannot close an exhaustive
+read audit. A full receipt is still required for generated/waived content.
+
+**Migration:** legacy receipts without `read_sha256` or snapshots are incomplete.
+Open a new pinned run if snapshots are absent; read the pinned bytes and append
+new receipts. Do not rename copied hashes or relabel automatic classifier output
+as human/agent verification.
 
 Statuses:
 
@@ -189,8 +200,8 @@ Statuses:
 | `verified` | Full read; no open issue for this path |
 | `finding` | Full read; one or more findings linked |
 | `waived` | Full read; issues accepted with reason + owner |
-| `blocked` | Cannot read (secrets binary, permission); reason required |
-| `skipped-generated` | Only if path matches generated allowlist AND content spot-checked |
+| `blocked` | Cannot read; `reason` required; prevents exhaustive closeout |
+| `skipped-generated` | Exact allowlist plus verifier evidence and complete read receipt |
 
 **Forbidden:** `skipped` without allowlist; partial reads marked verified.
 
@@ -373,11 +384,19 @@ provider requirements.
 
 ## MD-truth program (GAP-407)
 
+W1/W4/W5 emit `review-required` candidates from pinned bytes. Suggested statuses
+are routing hints, never verification or L4 evidence. A reviewer must read and
+cross-check the source before appending a terminal receipt. The MD truth gate
+requires fleet, Claude-home and Grok-home manifests by default; explicitly pass
+`--components fleet` (or another nonempty subset of `fleet,claude,grok`) when the
+run intentionally excludes a component. Missing expected components fail.
+
+
 | Script | Wave |
 |--------|------|
-| `scripts/w1-auto-class-md.js` | W1 historical/generated |
-| `scripts/w4-jv-present-md.js` | W4 .jv residual |
-| `scripts/w5-homes-md.js` | W5 claude/grok homes |
+| `scripts/w1-auto-class-md.js` | W1 historical/generated candidates |
+| `scripts/w4-jv-present-md.js` | W4 .jv review candidates |
+| `scripts/w5-homes-md.js` | W5 home review candidates |
 | `scripts/md-truth-check.js` | W6 gate (`--self-test` CI-safe; `--coverage` needs archive) |
 | `scripts/coverage-status.js` | complete bar (exit 0) |
 

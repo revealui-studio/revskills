@@ -1,3 +1,4 @@
+<!-- generated from .revealui/content/rules/exhaustive.md -->
 # Exhaustive (hardline)
 
 When enumerating, recommending, auditing, or implementing a requested list,

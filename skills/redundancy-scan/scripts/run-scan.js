@@ -33,11 +33,12 @@ function main() {
   }
 
   const scriptsDir = __dirname;
+  const root = path.resolve(args.root);
+  if (!fs.statSync(root).isDirectory()) throw new Error(`Not a scan directory: ${root}`);
   const outDir = path.resolve(args["out-dir"]);
   fs.mkdirSync(outDir, { recursive: true });
   fs.mkdirSync(path.join(outDir, "raw"), { recursive: true });
 
-  const root = path.resolve(args.root);
   const configArgs = args.config ? ["--config", args.config] : [];
 
   const meta = {
@@ -49,112 +50,17 @@ function main() {
   };
   fs.writeFileSync(path.join(outDir, "RUN.json"), JSON.stringify(meta, null, 2) + "\n");
 
-  if (args.fleet) {
-    // scan each immediate child directory
-    const kids = fs.readdirSync(root, { withFileTypes: true });
-    const inputs = [];
-    for (const ent of kids) {
-      if (!ent.isDirectory()) continue;
-      // Skip hidden dirs and known non-product trees (worktrees, local archive).
-      if (ent.name.startsWith(".")) continue;
-      if (
-        ["archive", "node_modules", "wt", "tmp", "docs", "scripts", "worktrees"].includes(ent.name)
-      ) {
-        continue;
-      }
-      if (ent.name.endsWith("-wt") || ent.name === "wt") continue;
-      const child = path.join(root, ent.name);
-      const pref = `${ent.name}/`;
-      const h = path.join(outDir, "raw", `${ent.name}-hash.jsonl`);
-      const m = path.join(outDir, "raw", `${ent.name}-markers.jsonl`);
-      const n = path.join(outDir, "raw", `${ent.name}-names.jsonl`);
-      run(path.join(scriptsDir, "hash-dups.js"), [
-        "--root",
-        child,
-        "--out",
-        h,
-        "--prefix",
-        pref,
-        ...configArgs,
-      ]);
-      run(path.join(scriptsDir, "marker-scan.js"), [
-        "--root",
-        child,
-        "--out",
-        m,
-        "--mode",
-        "both",
-        "--prefix",
-        pref,
-        ...configArgs,
-      ]);
-      run(path.join(scriptsDir, "name-collision.js"), [
-        "--root",
-        child,
-        "--out",
-        n,
-        "--prefix",
-        pref,
-        ...configArgs,
-      ]);
-      inputs.push(h, m, n);
-    }
-    if (inputs.length === 0) {
-      fs.writeFileSync(path.join(outDir, "findings.jsonl"), "");
-      fs.writeFileSync(
-        path.join(outDir, "report.md"),
-        "# Redundancy / deprecation scan report\n\nNo child repos to scan.\n",
-      );
-      fs.writeFileSync(
-        path.join(outDir, "summary.json"),
-        JSON.stringify({ total: 0, byClass: {}, emptyFleet: true }, null, 2) + "\n",
-      );
-    } else {
-      run(path.join(scriptsDir, "merge-report.js"), [
-        "--out-dir",
-        outDir,
-        "--inputs",
-        inputs.join(","),
-      ]);
-    }
-  } else {
-    const h = path.join(outDir, "raw", "hash.jsonl");
-    const m = path.join(outDir, "raw", "markers.jsonl");
-    const n = path.join(outDir, "raw", "names.jsonl");
-    const prefArgs = args.prefix ? ["--prefix", args.prefix] : [];
-    run(path.join(scriptsDir, "hash-dups.js"), [
-      "--root",
-      root,
-      "--out",
-      h,
-      ...prefArgs,
-      ...configArgs,
-    ]);
-    run(path.join(scriptsDir, "marker-scan.js"), [
-      "--root",
-      root,
-      "--out",
-      m,
-      "--mode",
-      "both",
-      ...prefArgs,
-      ...configArgs,
-    ]);
-    run(path.join(scriptsDir, "name-collision.js"), [
-      "--root",
-      root,
-      "--out",
-      n,
-      ...prefArgs,
-      ...configArgs,
-    ]);
-    run(path.join(scriptsDir, "merge-report.js"), [
-      "--out-dir",
-      outDir,
-      "--inputs",
-      [h, m, n].join(","),
-    ]);
+  if (!fs.statSync(root).isDirectory()) throw new Error(`Not a scan directory: ${root}`);
+  const inputs = [];
+  const scopeArgs = ["--root", root, ...configArgs];
+  if (args.fleet) scopeArgs.push("--fleet");
+  if (args.prefix) scopeArgs.push("--prefix", args.prefix);
+  for (const [script, output] of [["hash-dups.js", "hash.jsonl"], ["marker-scan.js", "markers.jsonl"], ["name-collision.js", "names.jsonl"]]) {
+    const file = path.join(outDir, "raw", output);
+    run(path.join(scriptsDir, script), [...scopeArgs, "--out", file]);
+    inputs.push(file);
   }
+  run(path.join(scriptsDir, "merge-report.js"), ["--out-dir", outDir, "--inputs", JSON.stringify(inputs)]);
 
   meta.finished = new Date().toISOString();
   fs.writeFileSync(path.join(outDir, "RUN.json"), JSON.stringify(meta, null, 2) + "\n");
