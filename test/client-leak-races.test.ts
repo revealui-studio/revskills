@@ -136,6 +136,23 @@ describe('descriptor-anchored client leak scanner', () => {
     assert.equal(report.violations, 1);
   });
 
+  it('checks a root filename when that root changes from directory to file before visit', () => {
+    const f = fixture();
+    const namedRoot = join(f.box, 'SyntheticPrivateCanary');
+    mkdirSync(namedRoot);
+    const report = scan([namedRoot], f.rules, {
+      beforeRootVisit: logicalPath => {
+        if (logicalPath !== namedRoot) return;
+        renameSync(namedRoot, join(f.box, 'moved-root'));
+        writeFileSync(namedRoot, 'safe');
+      },
+    });
+    assert.equal(report.files, 1);
+    assert.equal(report.violations, 1);
+    assert.equal(report.entries[0].line, 0);
+    assert.equal(fixtureDescriptors(f.box), 0);
+  });
+
   it('rejects a FIFO promptly and closes all pinned descriptors', () => {
     const f = fixture();
     const fifo = join(f.candidate, 'pipe');

@@ -13,6 +13,7 @@ type ScanHooks = Readonly<{
   afterDirectoryList?: (logicalPath: string) => void;
   afterCandidateStat?: (logicalPath: string) => void;
   afterCandidateOpen?: (logicalPath: string) => void;
+  beforeRootVisit?: (logicalPath: string) => void;
 }>;
 const excluded = new Set(['.git']);
 const fileRef = (file: string) => createHash('sha256').update(file).digest('hex');
@@ -111,14 +112,15 @@ export function scan(paths: string[], rulesFile: string, hooks: ScanHooks = {}) 
     }
   }
 
-  function visitAt(parentFd: number, name: string, logicalPath: string, base: string): void {
+  function visitAt(parentFd: number, name: string, logicalPath: string, base?: string): void {
     const child = fdPath(parentFd, name);
     const before = lstatSync(child, { bigint: true }); // ENOENT/EACCES are errors, never clean.
+    const scanBase = base ?? (before.isDirectory() ? logicalPath : dirname(logicalPath));
     hooks.afterCandidateStat?.(logicalPath);
     if (before.isSymbolicLink()) {
       const target = readlinkSync(child); // Link text only; never follow its target.
       if (!sameFile(before, lstatSync(child, { bigint: true }))) throw new Error('candidate changed during scan');
-      inspectBytes(Buffer.from(target), logicalPath, base);
+      inspectBytes(Buffer.from(target), logicalPath, scanBase);
       return;
     }
     if (before.isDirectory()) {
@@ -128,7 +130,7 @@ export function scan(paths: string[], rulesFile: string, hooks: ScanHooks = {}) 
         if (!sameFile(before, opened)) throw new Error('directory changed during scan');
         const entries = readdirSync(fdPath(fd));
         hooks.afterDirectoryList?.(logicalPath);
-        for (const entry of entries) if (!excluded.has(entry)) visitAt(fd, entry, join(logicalPath, entry), base);
+        for (const entry of entries) if (!excluded.has(entry)) visitAt(fd, entry, join(logicalPath, entry), scanBase);
         if (!contentMetadataMatches(opened, fstatSync(fd, { bigint: true }))) {
           throw new Error('directory changed during scan');
         }
@@ -148,7 +150,7 @@ export function scan(paths: string[], rulesFile: string, hooks: ScanHooks = {}) 
       hooks.afterCandidateOpen?.(logicalPath);
       const bytes = readFileSync(fd);
       if (!contentMetadataMatches(stat, fstatSync(fd, { bigint: true }))) throw new Error('candidate changed during scan');
-      inspectBytes(bytes, logicalPath, base);
+      inspectBytes(bytes, logicalPath, scanBase);
     } finally {
       closeSync(fd);
     }
@@ -171,8 +173,8 @@ export function scan(paths: string[], rulesFile: string, hooks: ScanHooks = {}) 
     }
     const parent = openAnchoredParent(logicalPath);
     try {
-      const stat = lstatSync(fdPath(parent.fd, parent.name), { bigint: true });
-      visitAt(parent.fd, parent.name, logicalPath, stat.isDirectory() ? logicalPath : dirname(logicalPath));
+      hooks.beforeRootVisit?.(logicalPath);
+      visitAt(parent.fd, parent.name, logicalPath);
     } finally {
       closeSync(parent.fd);
     }
