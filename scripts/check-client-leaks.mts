@@ -11,7 +11,7 @@ type ScanHooks = Readonly<{
   // Synthetic race fixtures only. The CLI never supplies these hooks.
   afterRuleOpen?: () => void;
   afterDirectoryList?: (logicalPath: string) => void;
-  afterCandidateStat?: (logicalPath: string) => void;
+  beforeCandidateOpen?: (logicalPath: string) => void;
   afterCandidateOpen?: (logicalPath: string) => void;
   beforeRootVisit?: (logicalPath: string) => void;
 }>;
@@ -114,42 +114,38 @@ export function scan(paths: string[], rulesFile: string, hooks: ScanHooks = {}) 
 
   function visitAt(parentFd: number, name: string, logicalPath: string, base?: string): void {
     const child = fdPath(parentFd, name);
-    const before = lstatSync(child, { bigint: true }); // ENOENT/EACCES are errors, never clean.
-    const scanBase = base ?? (before.isDirectory() ? logicalPath : dirname(logicalPath));
-    hooks.afterCandidateStat?.(logicalPath);
-    if (before.isSymbolicLink()) {
+    hooks.beforeCandidateOpen?.(logicalPath);
+    let fd: number;
+    try {
+      fd = openSync(child, fileFlags);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ELOOP') throw error;
+      const before = lstatSync(child, { bigint: true });
+      if (!before.isSymbolicLink()) throw new Error('candidate changed during scan');
       const target = readlinkSync(child); // Link text only; never follow its target.
       if (!sameFile(before, lstatSync(child, { bigint: true }))) throw new Error('candidate changed during scan');
-      inspectBytes(Buffer.from(target), logicalPath, scanBase);
+      inspectBytes(Buffer.from(target), logicalPath, base ?? dirname(logicalPath));
       return;
     }
-    if (before.isDirectory()) {
-      const fd = openSync(child, directoryFlags);
-      try {
-        const opened = fstatSync(fd, { bigint: true });
-        if (!sameFile(before, opened)) throw new Error('directory changed during scan');
+    try {
+      const opened = fstatSync(fd, { bigint: true });
+      const scanBase = base ?? (opened.isDirectory() ? logicalPath : dirname(logicalPath));
+      if (opened.isDirectory()) {
         const entries = readdirSync(fdPath(fd));
         hooks.afterDirectoryList?.(logicalPath);
         for (const entry of entries) if (!excluded.has(entry)) visitAt(fd, entry, join(logicalPath, entry), scanBase);
         if (!contentMetadataMatches(opened, fstatSync(fd, { bigint: true }))) {
           throw new Error('directory changed during scan');
         }
-      } finally {
-        closeSync(fd);
+        return;
       }
-      return;
-    }
-    const fd = openSync(child, fileFlags);
-    try {
-      const stat = fstatSync(fd, { bigint: true });
-      if (!sameFile(before, stat)) throw new Error('candidate changed during scan');
-      if (!stat.isFile() || (stat.mode & 0o444n) === 0n) throw new Error('unreadable candidate');
-      if (stat.dev === rulesIdentity.dev && stat.ino === rulesIdentity.ino) {
+      if (!opened.isFile() || (opened.mode & 0o444n) === 0n) throw new Error('unreadable candidate');
+      if (opened.dev === rulesIdentity.dev && opened.ino === rulesIdentity.ino) {
         throw new Error('private rules are inside the public scan scope');
       }
       hooks.afterCandidateOpen?.(logicalPath);
       const bytes = readFileSync(fd);
-      if (!contentMetadataMatches(stat, fstatSync(fd, { bigint: true }))) throw new Error('candidate changed during scan');
+      if (!contentMetadataMatches(opened, fstatSync(fd, { bigint: true }))) throw new Error('candidate changed during scan');
       inspectBytes(bytes, logicalPath, scanBase);
     } finally {
       closeSync(fd);

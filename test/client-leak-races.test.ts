@@ -86,7 +86,7 @@ describe('descriptor-anchored client leak scanner', () => {
     writeFileSync(file, 'safe');
     writeFileSync(join(f.box, 'outside.txt'), 'SyntheticPrivateCanary');
     assert.throws(() => scan([f.candidate], f.rules, {
-      afterCandidateStat: logicalPath => {
+      beforeCandidateOpen: logicalPath => {
         if (logicalPath !== file) return;
         renameSync(file, join(f.candidate, 'moved.txt'));
         symlinkSync(join(f.box, 'outside.txt'), file);

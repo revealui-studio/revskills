@@ -54,9 +54,11 @@ path-based fallback.
 The dictionary and candidate regular files are opened with `O_NOFOLLOW` and
 `O_NONBLOCK`, then checked and read through the same descriptor. The dictionary
 must have exactly mode `0600`; an in-scope hard link to its device/inode is
-rejected before reading candidate bytes. Directory ancestors and child
-directories are opened with `O_DIRECTORY | O_NOFOLLOW`; entries are resolved
-under `/proc/self/fd/<directory descriptor>/`. Symlinks contribute their link
+rejected before reading candidate bytes. Directory ancestors are opened with
+`O_DIRECTORY | O_NOFOLLOW`. Candidate children are opened with
+`O_RDONLY | O_NOFOLLOW | O_NONBLOCK`, then classified by `fstat` on that same
+descriptor; directories are walked through `/proc/self/fd/<directory descriptor>/`.
+Symlinks contribute their link
 text only. Directory and file metadata is checked again after reading, so a
 concurrent mutation makes the scan incomplete. Every distinct candidate
 filename is checked, including two names sharing a nonprivate inode.
