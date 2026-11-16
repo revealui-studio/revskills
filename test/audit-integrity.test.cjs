@@ -94,6 +94,35 @@ try {
   expect(run(path.join(redundancy,'merge-report.js'),['--inputs',path.join(temp,'absent'),'--out-dir',path.join(temp,'missing-merge')]),1,'missing detector input fails');
   const duplicate=jsonl(path.join(temp,'duplicate.jsonl'),[found[0],found[0]]);
   expect(run(path.join(redundancy,'merge-report.js'),['--inputs',duplicate,'--out-dir',path.join(temp,'duplicate-merge')]),1,'duplicate finding IDs fail merge');
+  const regular=jsonl(path.join(temp,'detector.jsonl'),[found[0]]);
+  const detectorLink=path.join(temp,'detector-link.jsonl');fs.symlinkSync(regular,detectorLink);
+  expect(run(path.join(redundancy,'merge-report.js'),['--inputs',detectorLink,'--out-dir',path.join(temp,'link-merge')]),1,'symlink detector input refused');
+  expect(run(path.join(redundancy,'merge-report.js'),['--inputs',fleet,'--out-dir',path.join(temp,'dir-merge')]),1,'directory detector input refused');
+  const swapHook=write(path.join(temp,'swap-hook.cjs'),`
+    const fs=require('node:fs');
+    const open=fs.openSync;
+    fs.openSync=function(file,...args) {
+      const fd=open.call(fs,file,...args);
+      if(file===process.env.DETECTOR_FIXTURE) {
+        fs.renameSync(file,file+'.opened');fs.writeFileSync(file,'invalid replacement');
+      }
+      return fd;
+    };
+  `);
+  const swappedOutput=path.join(temp,'swapped-merge');
+  expect(run(path.join(redundancy,'merge-report.js'),['--inputs',regular,'--out-dir',swappedOutput],{NODE_OPTIONS:`--require=${swapHook}`,DETECTOR_FIXTURE:regular}),0,'detector replacement after open cannot redirect read');
+  assert.deepEqual(readRows(path.join(swappedOutput,'findings.jsonl')),[found[0]]);
+  jsonl(regular,[found[0]]);
+  const mutateHook=write(path.join(temp,'mutate-hook.cjs'),`
+    const fs=require('node:fs');const open=fs.openSync;const read=fs.readFileSync;let descriptor;
+    fs.openSync=function(file,...args) {const fd=open.call(fs,file,...args);if(file===process.env.DETECTOR_FIXTURE)descriptor=fd;return fd;};
+    fs.readFileSync=function(file,...args) {const bytes=read.call(fs,file,...args);if(file===descriptor)fs.appendFileSync(process.env.DETECTOR_FIXTURE,' ');return bytes;};
+  `);
+  expect(run(path.join(redundancy,'merge-report.js'),['--inputs',regular,'--out-dir',path.join(temp,'mutated-merge')],{NODE_OPTIONS:`--require=${mutateHook}`,DETECTOR_FIXTURE:regular}),1,'detector in-place write during read is rejected');
+  if(process.platform==='linux') {
+    const fifo=path.join(temp,'detector-fifo');assert.equal(spawnSync('mkfifo',[fifo]).status,0);
+    expect(spawnSync(process.execPath,[path.join(redundancy,'merge-report.js'),'--inputs',fifo,'--out-dir',path.join(temp,'fifo-merge')],{encoding:'utf8',timeout:2000}),1,'FIFO detector input fails without blocking');
+  }
   const unreadable=path.join(fleet,'alpha/secret.ts');write(unreadable,'synthetic fixture');fs.chmodSync(unreadable,0);
   try { expect(run(path.join(redundancy,'run-scan.js'),['--root',fleet,'--fleet','--out-dir',path.join(temp,'unreadable-scan')]),1,'read errors fail scan'); }
   finally {fs.chmodSync(unreadable,0o600);}

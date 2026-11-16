@@ -12,13 +12,28 @@ const path = require("path");
 const { parseArgs, ensureDirFor } = require("./lib.js");
 
 function loadJsonl(file) {
-  if (!fs.statSync(file).isFile()) throw new Error(`Missing regular detector input: ${file}`);
-  const rows = [];
-  for (const line of fs.readFileSync(file, "utf8").split("\n")) {
-    if (!line.trim()) continue;
-    rows.push(JSON.parse(line));
+  // Validate and consume the same opened object, even if its pathname changes.
+  if (typeof fs.constants.O_NOFOLLOW !== "number" || typeof fs.constants.O_NONBLOCK !== "number") {
+    throw new Error("Detector input requires no-follow, nonblocking file opens");
   }
-  return rows;
+  const fd = fs.openSync(file, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
+  try {
+    const before = fs.fstatSync(fd, { bigint: true });
+    if (!before.isFile()) throw new Error(`Missing regular detector input: ${file}`);
+    const text = fs.readFileSync(fd, "utf8");
+    const after = fs.fstatSync(fd, { bigint: true });
+    if (before.size !== after.size || before.mtimeNs !== after.mtimeNs || before.ctimeNs !== after.ctimeNs) {
+      throw new Error(`Detector input changed during read: ${file}`);
+    }
+    const rows = [];
+    for (const line of text.split("\n")) {
+      if (!line.trim()) continue;
+      rows.push(JSON.parse(line));
+    }
+    return rows;
+  } finally {
+    fs.closeSync(fd);
+  }
 }
 
 function main() {

@@ -43,3 +43,22 @@ The workflow becomes active when its reviewed implementation reaches the
 protected default branch. Local synthetic tests do not establish that hosted
 Actions ran. Removing private literals from this revision does not rewrite
 existing Git history or remote copies.
+
+## Linux descriptor traversal
+
+The scanner requires Linux or WSL with `/proc/self/fd` mounted. Node does not
+expose a portable `openat` API, so unsupported hosts fail closed with an
+explicit Linux requirement. The hosted gate uses a Linux runner. There is no
+path-based fallback.
+
+The dictionary and candidate regular files are opened with `O_NOFOLLOW` and
+`O_NONBLOCK`, then checked and read through the same descriptor. The dictionary
+must have exactly mode `0600`; an in-scope hard link to its device/inode is
+rejected before reading candidate bytes. Directory ancestors and child
+directories are opened with `O_DIRECTORY | O_NOFOLLOW`; entries are resolved
+under `/proc/self/fd/<directory descriptor>/`. Symlinks contribute their link
+text only. Directory and file metadata is checked again after reading, so a
+concurrent mutation makes the scan incomplete. Every distinct candidate
+filename is checked, including two names sharing a nonprivate inode.
+
+Synthetic race coverage is in `test/client-leak-races.test.ts`.

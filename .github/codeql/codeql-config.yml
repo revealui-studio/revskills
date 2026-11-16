@@ -1,5 +1,9 @@
 name: "RevealUI CodeQL config"
 paths-ignore:
+  # RevKit copies these reproducible bundles; analyze scripts/src/ and
+  # scripts/lib/ instead. pnpm test runs build-hooks.mts --check.
+  - "scripts/snapshot-before-compact.js"
+  - "scripts/sync-grok-token-budget.js"
   - "**/__tests__/**"
   - "**/*.test.ts"
   - "**/*.test.tsx"
