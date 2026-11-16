@@ -1,7 +1,7 @@
 {
   "$schema": "https://json.schemastore.org/claude-code-plugin-manifest.json",
   "name": "revskills",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "RevealUI fleet Agent Skills bundle (framework, data, testing, security, Studio workflow). Claude Code plugin is one install adapter; skills/ is the SSOT for equal harnesses.",
   "author": {
     "name": "RevealUI Studio",
@@ -9,5 +9,11 @@
   },
   "homepage": "https://github.com/RevealUIStudio/revskills",
   "license": "MIT",
-  "keywords": ["revealui", "revealfleet", "agent-skills", "skills", "claude-code-adapter"]
+  "keywords": [
+    "revealui",
+    "revealfleet",
+    "agent-skills",
+    "skills",
+    "claude-code-adapter"
+  ]
 }

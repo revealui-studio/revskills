@@ -48,7 +48,7 @@ test_planes_documented_and_checkpoint_write_ssot() {
   fi
   assert_contains "checkpoint writes .revealui/workboard.d" ".revealui/workboard.d" "$skill"
   assert_contains "checkpoint renders the neutral board" ".revealui/workboard.md" "$skill"
-  assert_contains "solo checkpoint uses the worktree commit" "Worktree commit (solo and peer-live)" "$skill"
+  assert_contains "checkpoint creates branch in an isolated worktree" 'git worktree add "$WT" -b "$BR" origin/test' "$skill"
   if [[ "$skill" == *'git merge --ff-only origin/test 2>/dev/null || true'* ]]; then
     fail "checkpoint still swallows a non-fast-forward on the main checkout"
   else

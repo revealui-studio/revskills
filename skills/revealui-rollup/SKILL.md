@@ -7,15 +7,14 @@ description: >
   the user asks to roll up handoffs. Never auto-run from /checkpoint.
   Not /checkpoint. Not /cleanup.
 license: MIT
-allowed-tools: Bash, Read
+compatibility: RevealFleet Studio layout at REVEALFLEET_ROOT; executable helpers require Node.js 24+ and pnpm 10 when invoked.
+allowed-tools: Bash Read
 metadata:
+  pack: studio
   author: RevealUI Studio
-  version: "0.1.0"
+  version: "0.1.1"
   website: https://revealui.com
-  related:
-    - revealui-ops
-    - revealui-checkpoint
-    - revealui-cleanup
+  related: "revealui-ops revealui-checkpoint revealui-cleanup"
 ---
 
 # Rollup (`/rollup`) — MASTER_HANDOFF regen

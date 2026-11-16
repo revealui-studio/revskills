@@ -8,7 +8,10 @@
 # Prints result JSON on stdout. Returns non-zero on transport/RPC error.
 ss_daemon_rpc() {
   local method="${1:-}"
-  local params_json="${2:-{}}"
+  local params_json='{}'
+  if [ "$#" -ge 2 ] && [ -n "$2" ]; then
+    params_json="$2"
+  fi
   [ -n "$method" ] || {
     printf 'ss_daemon_rpc: method required\n' >&2
     return 1
@@ -33,6 +36,9 @@ try:
     params = json.loads(params_raw) if params_raw else {}
 except json.JSONDecodeError as e:
     print(f"invalid params json: {e}", file=sys.stderr)
+    sys.exit(2)
+if not isinstance(params, dict):
+    print("params must be a JSON object", file=sys.stderr)
     sys.exit(2)
 req = {"jsonrpc": "2.0", "id": 1, "method": method, "params": params}
 payload = (json.dumps(req, separators=(",", ":")) + "\n").encode()
@@ -168,6 +174,10 @@ ss_daemon_snapshot_write() {
     printf 'skipped: no session id\n'
     return 0
   fi
+  if ! ss_valid_session_id "$sid"; then
+    printf 'skipped: invalid session id\n'
+    return 0
+  fi
 
   if ! ss_daemon_alive; then
     printf 'skipped: daemon socket not present\n'
@@ -218,6 +228,7 @@ ss_daemon_snapshot_get() {
     sid="$(ss_session_id 2>/dev/null)" || true
   fi
   [ -n "$sid" ] || return 1
+  ss_valid_session_id "$sid" || return 1
   ss_daemon_alive || return 1
   local agent="${REVDEV_ACTOR_AGENT_ID:-${REVEALUI_AGENT_ID:-skill-snapshot}}"
   local params
@@ -235,6 +246,7 @@ ss_snapshot_sections_to_markdown() {
     printf 'ss_snapshot_sections_to_markdown: session id required\n' >&2
     return 1
   }
+  ss_valid_session_id "$sid" || return 1
   [ -n "$sections_json" ] || {
     printf 'ss_snapshot_sections_to_markdown: sections json required\n' >&2
     return 1
@@ -335,17 +347,10 @@ print(json.dumps(sec, separators=(",", ":")))
 
   write_path="$(ss_snapshot_write_path "$sid" 2>/dev/null)" || true
   [ -n "$write_path" ] || return 0
-  if command -v ss_ensure_coord_dirs >/dev/null 2>&1; then
-    ss_ensure_coord_dirs 2>/dev/null || true
-  else
-    mkdir -p "$(dirname "$write_path")" 2>/dev/null || true
-  fi
-
   if ! md="$(ss_snapshot_sections_to_markdown "$sid" "$sections" 2>/dev/null)"; then
     return 0
   fi
-  printf '%s' "$md" >"$write_path" || return 0
-  printf '%s\n' "$write_path"
+  printf '%s\n' "$md" | node "$SS_SNAPSHOT_FILES" atomic-write "$REVEALUI_COORD_ROOT" "$sid" 2>/dev/null || return 0
   return 0
 }
 

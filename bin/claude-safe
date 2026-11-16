@@ -19,9 +19,7 @@ DISTRO="${WSL_DISTRO_NAME:-Ubuntu}"
 # --- Simulate-crash mode: exercise the recovery path without killing a live session ---
 # Usage: claude-safe --simulate-crash [exit_code]   (default 139, SIGSEGV-ish)
 # Resolved before the real binary so a missing `claude` does not block the drill.
-SIMULATE=0
 if [[ "${1:-}" == "--simulate-crash" ]]; then
-  SIMULATE=1
   shift
   EXIT="${1:-139}"
   [[ "$EXIT" =~ ^[0-9]+$ ]] || EXIT=139

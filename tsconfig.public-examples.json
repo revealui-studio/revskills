@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["node"],
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true
+  },
+  "include": [
+    "skills/mcp-server/examples/**/*.mts",
+    "skills/electric-sync/examples/**/*.mts",
+    "skills/multi-agent-memory/examples/**/*.mts",
+    "skills/security-hardening/examples/**/*.mts",
+    "skills/yjs-collaboration/examples/**/*.mts"
+  ]
+}

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # skills/redundancy-scan/scripts/run-scan.js empty fleet.
 
-test_run_scan_empty_fleet_does_not_call_merge() {
+test_run_scan_empty_fleet_records_zero() {
   local root out summary
   root="$(make_sandbox)"
   out="$(make_sandbox)/scan"
@@ -9,5 +9,5 @@ test_run_scan_empty_fleet_does_not_call_merge() {
     -- node "$REPO_ROOT/skills/redundancy-scan/scripts/run-scan.js" \
       --root "$root" --fleet --out-dir "$out"
   summary="$(cat "$out/summary.json")"
-  assert_contains "empty fleet summary is recorded" '"emptyFleet": true' "$summary"
+  assert_contains "empty fleet summary is recorded" '"total": 0' "$summary"
 }

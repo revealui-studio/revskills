@@ -7,6 +7,7 @@ SKILL="$REPO_ROOT/skills/exhaustive-audit/scripts"
 make_fake_fleet() {
   local root
   root="$(make_sandbox)"
+  node -e 'const fs=require("node:fs"), path=require("node:path"); for(const name of require(process.argv[1]).DEFAULT_FLEET_REPOS) fs.mkdirSync(path.join(process.argv[2],name),{recursive:true});' "$SKILL/lib/fleet-scope.js" "$root"
   mkdir -p "$root/agency/app" "$root/revealui/src" "$root/archive/cold" \
     "$root/tmp" "$root/scripts" "$root/.jv/docs" "$root/wt-skip/x" \
     "$root/docs/walk" "$root/revmind/notes"
@@ -227,176 +228,9 @@ test_claim_complete_vs_release() {
   fi
 }
 
-test_coverage_mode_split() {
-  local dir man led
-  dir="$(make_sandbox)"
-  man="$dir/m.jsonl"
-  led="$dir/c.jsonl"
-  printf '%s\n' '{"path":"a.ts","lines":2,"sha256":"aa"}' >"$man"
-  printf '%s\n' '{"path":"a.ts","status":"historical-ok","lines_read":[1,2]}' >"$led"
-  local code_rc md_rc
-  code_rc=0
-  md_rc=0
-  node "$SKILL/coverage-status.js" --manifest "$man" --ledger "$led" --mode code >/dev/null 2>&1 || code_rc=$?
-  node "$SKILL/coverage-status.js" --manifest "$man" --ledger "$led" --mode md-truth >/dev/null 2>&1 || md_rc=$?
-  assert_eq "1" "$code_rc" "code mode rejects historical-ok"
-  assert_eq "0" "$md_rc" "md-truth mode accepts historical-ok"
-
-  printf '%s\n' '{"path":"a.ts","status":"verified"}' >"$led"
-  local ver_rc=0
-  node "$SKILL/coverage-status.js" --manifest "$man" --ledger "$led" --mode code >/dev/null 2>&1 || ver_rc=$?
-  assert_eq "1" "$ver_rc" "code mode refuses verified without lines_read"
-
-  printf '%s\n' '{"path":"a.ts","status":"finding","lines_read":[1,2]}' >"$led"
-  local find_rc=0
-  node "$SKILL/coverage-status.js" --manifest "$man" --ledger "$led" --mode code >/dev/null 2>&1 || find_rc=$?
-  assert_eq "1" "$find_rc" "code mode refuses finding without finding_ids"
-
-  printf '%s\n' '{"path":"a.ts","status":"verified","lines_read":[1,2]}' >"$led"
-  local ok_rc=0
-  node "$SKILL/coverage-status.js" --manifest "$man" --ledger "$led" --mode code >/dev/null 2>&1 || ok_rc=$?
-  assert_eq "0" "$ok_rc" "code mode accepts verified with full span"
-}
-
 test_md_truth_self_test() {
   assert_exit "md-truth-check --self-test still passes" 0 \
     -- node "$SKILL/md-truth-check.js" --self-test
-}
-
-test_coverage_requires_exact_text_span() {
-  local dir man led span
-  dir="$(make_sandbox)"
-  man="$dir/m.jsonl"
-  led="$dir/c.jsonl"
-  printf '%s\n' '{"path":"a.ts","lines":2}' >"$man"
-  for span in '[2,3]' '[0,1]' '[-1,0]' '[1,1]' '[1,3]' '[2,1]' \
-    '[1.5,2.5]' '["1",2]' '[1,"2"]' '[null,2]' '[1,null]' \
-    '[1]' '[1,2,3]' 'null' '{}'; do
-    printf '{"path":"a.ts","status":"verified","lines_read":%s}\n' "$span" >"$led"
-    assert_exit "verified rejects non-exact text span $span" 1 \
-      -- node "$SKILL/coverage-status.js" --manifest "$man" --ledger "$led"
-    assert_contains "invalid span $span does not count as covered" '"covered": 0' "$LAST_OUTPUT"
-  done
-  printf '%s\n' '{"path":"a.ts","status":"finding","finding_ids":["F-1"],"lines_read":[2,3]}' >"$led"
-  assert_exit "finding rejects displaced full-length text span" 1 \
-    -- node "$SKILL/coverage-status.js" --manifest "$man" --ledger "$led"
-  printf '%s\n' '{"path":"a.ts","status":"historical-ok","lines_read":[1,3]}' >"$led"
-  assert_exit "md-truth rejects supplied overshooting text span" 1 \
-    -- node "$SKILL/coverage-status.js" --manifest "$man" --ledger "$led" --mode md-truth
-  printf '%s\n' '{"path":"a.ts","status":"blocked","lines_read":[1,1]}' >"$led"
-  assert_exit "blocked preserves partial-read exemption" 0 \
-    -- node "$SKILL/coverage-status.js" --manifest "$man" --ledger "$led"
-}
-
-test_coverage_empty_and_binary_conventions() {
-  local dir man led span
-  dir="$(make_sandbox)"
-  man="$dir/m.jsonl"
-  led="$dir/c.jsonl"
-  printf '%s\n' '{"path":"empty.ts","lines":0}' >"$man"
-  printf '%s\n' '{"path":"empty.ts","status":"verified"}' >"$led"
-  assert_exit "empty text permits omitted line span" 0 \
-    -- node "$SKILL/coverage-status.js" --manifest "$man" --ledger "$led"
-  printf '%s\n' '{"path":"empty.ts","status":"verified","lines_read":[0,0]}' >"$led"
-  assert_exit "empty text permits established zero span" 0 \
-    -- node "$SKILL/coverage-status.js" --manifest "$man" --ledger "$led"
-  for span in '[1,1]' '[-1,-1]' '[0,1]' '[0.5,0.5]' '["0",0]' 'null'; do
-    printf '{"path":"empty.ts","status":"verified","lines_read":%s}\n' "$span" >"$led"
-    assert_exit "empty text rejects invented span $span" 1 \
-      -- node "$SKILL/coverage-status.js" --manifest "$man" --ledger "$led"
-  done
-  printf '%s\n' '{"path":"binary.dat","lines":null,"binary":true}' >"$man"
-  printf '%s\n' '{"path":"binary.dat","status":"blocked"}' >"$led"
-  assert_exit "binary manifest retains no text-line requirement" 0 \
-    -- node "$SKILL/coverage-status.js" --manifest "$man" --ledger "$led"
-}
-
-test_coverage_check_hash_requires_both_declared_hashes() {
-  local dir man led hash
-  dir="$(make_sandbox)"
-  man="$dir/m.jsonl"
-  led="$dir/c.jsonl"
-  printf '%s\n' '{"path":"a.ts","lines":2,"sha256":"aa"}' >"$man"
-  printf '%s\n' '{"path":"a.ts","status":"verified","lines_read":[1,2]}' >"$led"
-  assert_exit "hash flag refuses missing ledger hash" 1 \
-    -- node "$SKILL/coverage-status.js" --manifest "$man" --ledger "$led" --check-hash
-  assert_contains "missing ledger hash is diagnosed" 'ledger-sha256-missing' "$LAST_OUTPUT"
-  assert_exit "without hash flag retains unhashed ledger compatibility" 0 \
-    -- node "$SKILL/coverage-status.js" --manifest "$man" --ledger "$led"
-  for hash in 'null' '""' '"   "' '7' '{}'; do
-    printf '{"path":"a.ts","status":"verified","lines_read":[1,2],"sha256":%s}\n' "$hash" >"$led"
-    assert_exit "hash flag refuses invalid legacy receipt hash $hash" 1 \
-      -- node "$SKILL/coverage-status.js" --manifest "$man" --ledger "$led" --check-hash
-  done
-  printf '%s\n' '{"path":"a.ts","status":"verified","lines_read":[1,2],"sha256":"aa"}' >"$led"
-  assert_exit "hash flag accepts matching legacy receipt hash" 0 \
-    -- node "$SKILL/coverage-status.js" --manifest "$man" --ledger "$led" --check-hash
-  printf '%s\n' '{"path":"a.ts","lines":2}' >"$man"
-  assert_exit "hash flag refuses missing manifest hash" 1 \
-    -- node "$SKILL/coverage-status.js" --manifest "$man" --ledger "$led" --check-hash
-  assert_contains "missing manifest hash is diagnosed" 'manifest-sha256-missing' "$LAST_OUTPUT"
-  for hash in 'null' '""' '"   "' '7' '{}'; do
-    printf '{"path":"a.ts","lines":2,"sha256":%s}\n' "$hash" >"$man"
-    assert_exit "hash flag refuses invalid manifest hash $hash" 1 \
-      -- node "$SKILL/coverage-status.js" --manifest "$man" --ledger "$led" --check-hash
-  done
-}
-
-test_coverage_read_hash_takes_precedence() {
-  local dir man led hash
-  dir="$(make_sandbox)"
-  man="$dir/m.jsonl"
-  led="$dir/c.jsonl"
-  printf '%s\n' '{"path":"a.ts","lines":2,"sha256":"aa"}' >"$man"
-  printf '%s\n' '{"path":"a.ts","status":"verified","lines_read":[1,2],"read_sha256":"aa"}' >"$led"
-  assert_exit "hash flag accepts explicit matching read hash" 0 \
-    -- node "$SKILL/coverage-status.js" --manifest "$man" --ledger "$led" --check-hash
-  printf '%s\n' '{"path":"a.ts","status":"verified","lines_read":[1,2],"read_sha256":"bb","sha256":"aa"}' >"$led"
-  assert_exit "matching legacy hash cannot mask explicit read mismatch" 1 \
-    -- node "$SKILL/coverage-status.js" --manifest "$man" --ledger "$led" --check-hash
-  assert_contains "explicit read mismatch is diagnosed" 'sha256-mismatch' "$LAST_OUTPUT"
-  printf '%s\n' '{"path":"a.ts","status":"verified","lines_read":[1,2],"read_sha256":"aa","sha256":"bb"}' >"$led"
-  assert_exit "explicit matching read hash wins over legacy hash" 0 \
-    -- node "$SKILL/coverage-status.js" --manifest "$man" --ledger "$led" --check-hash
-  for hash in 'null' '""' '"   "' '7' '{}'; do
-    printf '{"path":"a.ts","status":"verified","lines_read":[1,2],"read_sha256":%s,"sha256":"aa"}\n' "$hash" >"$led"
-    assert_exit "invalid explicit read hash $hash cannot fall back to legacy hash" 1 \
-      -- node "$SKILL/coverage-status.js" --manifest "$man" --ledger "$led" --check-hash
-  done
-  printf '%s\n' '{"path":"a.ts","status":"historical-ok"}' >"$led"
-  assert_exit "md-truth hash flag also requires receipt hash" 1 \
-    -- node "$SKILL/coverage-status.js" --manifest "$man" --ledger "$led" --mode md-truth --check-hash
-  printf '%s\n' '{"path":"a.ts","status":"historical-ok","read_sha256":"aa"}' >"$led"
-  assert_exit "md-truth matching hash retains missing-span allowance" 0 \
-    -- node "$SKILL/coverage-status.js" --manifest "$man" --ledger "$led" --mode md-truth --check-hash
-}
-
-test_w4_trailing_newline_span_is_terminal() {
-  local tree man led
-  tree="$(make_sandbox)"
-  mkdir -p "$tree/.jv/docs/lanes"
-  printf 'lane\nplan\n' >"$tree/.jv/docs/lanes/one.md"
-  man="$(make_sandbox)/manifest.jsonl"
-  led="$(make_sandbox)/coverage.jsonl"
-  : >"$led"
-  node "$SKILL/manifest-build.js" --root "$tree" --out "$man" >/dev/null
-  node "$SKILL/w4-jv-present-md.js" --manifest "$man" --ledger "$led" >/dev/null
-  assert_exit "w4 trailing newline is a terminal md-truth row" 0 \
-    -- node "$SKILL/coverage-status.js" --manifest "$man" --ledger "$led" --mode md-truth
-}
-
-test_w5_trailing_newline_span_is_terminal() {
-  local tree man led
-  tree="$(make_sandbox)"
-  mkdir -p "$tree/grok-home/notes"
-  printf 'home\nnote\n' >"$tree/grok-home/notes/a.md"
-  man="$(make_sandbox)/manifest.jsonl"
-  led="$(make_sandbox)/coverage.jsonl"
-  : >"$led"
-  node "$SKILL/manifest-build.js" --root "$tree" --out "$man" >/dev/null
-  node "$SKILL/w5-homes-md.js" --manifest-grok "$man" --ledger "$led" >/dev/null
-  assert_exit "w5 trailing newline is a terminal md-truth row" 0 \
-    -- node "$SKILL/coverage-status.js" --manifest "$man" --ledger "$led" --mode md-truth
 }
 
 test_open_run_refuses_home_default() {
@@ -489,36 +323,10 @@ test_claim_refresh_requires_exact_agent() {
   fi
 }
 
-test_w1_hash_mismatch_is_finding() {
-  local tree man led row
-  tree="$(make_sandbox)"
-  mkdir -p "$tree/docs/handoffs/rolling"
-  printf 'one\n' >"$tree/docs/handoffs/rolling/note.md"
-  man="$(make_sandbox)/manifest.jsonl"
-  led="$(make_sandbox)/coverage.jsonl"
-  : >"$led"
-  node "$SKILL/manifest-build.js" --root "$tree" --out "$man" >/dev/null
-  printf 'two\n' >"$tree/docs/handoffs/rolling/note.md"
-  node "$SKILL/w1-auto-class-md.js" --manifest "$man" --ledger "$led" >/dev/null
-  row="$(node -e 'const fs=require("fs"); const rows=fs.readFileSync(process.argv[1],"utf8").trim().split("\n").map(JSON.parse); const row=rows.find(r=>r.path.endsWith("note.md")); process.stdout.write(JSON.stringify(row));' "$led")"
-  assert_contains "w1 hash mismatch status is finding" '"status":"finding"' "$row"
-  assert_contains "w1 hash mismatch carries a finding id" 'W1-HASH-' "$row"
-}
 
-test_w5_policy_flag_is_finding() {
-  local tree man led row
-  tree="$(make_sandbox)"
-  mkdir -p "$tree/grok-home/rules"
-  python3 - "$tree/grok-home/rules/fat.md" <<'PY'
-import sys
-open(sys.argv[1], "w").write("~/suite/live\n" + ("x" * 5000) + "\n")
-PY
-  man="$(make_sandbox)/manifest.jsonl"
-  led="$(make_sandbox)/coverage.jsonl"
-  : >"$led"
-  node "$SKILL/manifest-build.js" --root "$tree" --out "$man" >/dev/null
-  node "$SKILL/w5-homes-md.js" --manifest-grok "$man" --ledger "$led" >/dev/null
-  row="$(node -e 'const fs=require("fs"); const rows=fs.readFileSync(process.argv[1],"utf8").trim().split("\n").map(JSON.parse); const row=rows.find(r=>r.path.endsWith("fat.md")); process.stdout.write(JSON.stringify(row));' "$led")"
-  assert_contains "w5 policy flag status is finding" '"status":"finding"' "$row"
-  assert_contains "w5 policy flag carries a finding id" 'W5-' "$row"
+# Supersedes legacy unhashed/auto-verified expectations with adversarial tests
+# against real snapshot-backed manifests and explicit review receipts.
+test_audit_integrity_adversarial() {
+  assert_exit "all twelve audit integrity regressions" 0 \
+    -- node "$REPO_ROOT/test/audit-integrity.test.cjs"
 }

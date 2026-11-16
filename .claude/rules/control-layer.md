@@ -1,3 +1,4 @@
+<!-- generated from .revealui/content/rules/control-layer.md -->
 # Control Layer, Not Mirrors
 
 **Status:** convention. States the architecture shared workflow capabilities

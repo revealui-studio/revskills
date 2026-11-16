@@ -2,6 +2,7 @@
 
 const fs = require("fs");
 const path = require("path");
+const crypto = require("node:crypto");
 
 function parseArgs(argv) {
   const out = { _: [] };
@@ -50,9 +51,10 @@ function walkFiles(rootAbs, relBase, excludeSet, textExtSet, maxFileBytes, onFil
   let entries;
   try {
     entries = fs.readdirSync(rootAbs, { withFileTypes: true });
-  } catch {
-    return;
+  } catch (error) {
+    throw new Error(`Cannot scan directory ${rootAbs}: ${error.message}`);
   }
+  entries.sort((a, b) => a.name.localeCompare(b.name));
   for (const ent of entries) {
     const name = ent.name;
     if (ent.isDirectory()) {
@@ -74,13 +76,34 @@ function walkFiles(rootAbs, relBase, excludeSet, textExtSet, maxFileBytes, onFil
     let st;
     try {
       st = fs.statSync(abs);
-    } catch {
-      continue;
+    } catch (error) {
+      throw new Error(`Cannot stat ${abs}: ${error.message}`);
     }
     if (st.size > maxFileBytes) continue;
     const rel = path.join(relBase, name).split(path.sep).join("/");
     onFile({ abs, rel, size: st.size, ext });
   }
+}
+
+// Fleet detectors share one callback/map across all selected child roots, so
+// cross-repository groups are retained instead of merging already-filtered groups.
+function walkScope(args, cfg, onFile) {
+  const root = path.resolve(args.root);
+  if (!fs.statSync(root).isDirectory()) throw new Error(`Not a scan directory: ${root}`);
+  const exclude = new Set(cfg.excludeDirNames || []);
+  const extensions = new Set(cfg.textExtensions || []);
+  const max = cfg.maxFileBytes ?? 1_500_000;
+  if (!Number.isFinite(max) || max < 0) throw new Error("Invalid maxFileBytes");
+  if (!args.fleet) return walkFiles(root, "", exclude, extensions, max, onFile);
+  const excludedRoots = new Set(["archive", "node_modules", "wt", "tmp", "docs", "scripts", "worktrees"]);
+  const entries = fs.readdirSync(root, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name));
+  for (const ent of entries) {
+    if (!ent.isDirectory() || ent.name.startsWith(".") || excludedRoots.has(ent.name) || ent.name.endsWith("-wt")) continue;
+    walkFiles(path.join(root, ent.name), ent.name, exclude, extensions, max, onFile);
+  }
+}
+function findingId(kind, identity) {
+  return `${kind}-${crypto.createHash("sha256").update(JSON.stringify(identity)).digest("hex")}`;
 }
 
 function ensureDirFor(filePath) {
@@ -105,6 +128,8 @@ module.exports = {
   parseArgs,
   loadConfig,
   walkFiles,
+  walkScope,
+  findingId,
   writeJsonl,
   appendJsonl,
   ensureDirFor,

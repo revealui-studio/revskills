@@ -1,3 +1,4 @@
+<!-- generated from .revealui/content/rules/git.md -->
 # Git Conventions
 
 ## Commit Messages
@@ -64,4 +65,5 @@ Grok worktrees: use `rfg … --worktree=…` (injects `--ref test`) or pass
 
 ## Identity
 - Professional repos (RevealUIStudio): display name `RevealUI Studio` plus the **signing account's** verified GitHub noreply address (shape `id+login@users.noreply.github.com` on the account that holds the SSH signing key). Do not paste a personal login into public rule copies; resolve the real address from the machine git config / fleet hardline when committing.
-- Amended 2026-07-10: never "restore" founder@revealui.com. It belongs to the org account, so SSH-signed commits carrying it render Unverified and required_signatures rulesets silently block the merge. Full rationale in the fleet-level Studio git hardline (not re-copied here).
+- Accepted additional author identity (owner 2026-09-30): `founder@revealui.com` also belongs to the project owner. Preserve this author identity when re-signing commits; do not replace it merely because the configured signing identity differs.
+- Keep the current signing identity as the default. For signed commits, the committer email must be verified on the GitHub account holding the signing key. An unsigned commit needs a signature regardless of its author email; check GitHub's verification reason before diagnosing an identity mismatch.

@@ -1,159 +1,49 @@
 ---
 name: mcp-server
-description: Model Context Protocol server development patterns. Use when building custom MCP servers, exposing tools and resources, handling JSON-RPC, implementing credential isolation, or integrating with Claude Desktop, Cursor, or AI agents. Covers @modelcontextprotocol/sdk, StdioServerTransport, tool schemas, and multi-tenant credential patterns.
+description: Model Context Protocol server development patterns. Use when building custom MCP servers, exposing tools and resources, handling JSON-RPC, implementing credential isolation, or integrating with Claude Desktop, Cursor, or AI agents. Covers @modelcontextprotocol/server v2, serveStdio, tool schemas, and multi-tenant credential patterns.
 license: MIT
-allowed-tools: Read, Grep, Glob
+compatibility: Agent Skills host; executable TypeScript examples require Node.js 24+, pnpm 10 and the dependencies in the revskills package manifest.
+allowed-tools: Read Grep Glob
 metadata:
+  pack: public
   author: RevealUI Studio
-  version: "0.1.0"
+  version: "0.1.1"
   website: https://revealui.com
 ---
 
 # MCP Server Development
 
-## Server Scaffolding
+## Supported SDK and executable example
+
+This guide targets the **v2 TypeScript SDK** (`@modelcontextprotocol/server`), not the older `@modelcontextprotocol/sdk` v1 import paths. The complete typed example is [`examples/tenant-server.mts`](examples/tenant-server.mts). The official v2 [server guide](https://github.com/modelcontextprotocol/typescript-sdk/blob/main/docs/get-started/first-server.md) and [tool guide](https://github.com/modelcontextprotocol/typescript-sdk/blob/main/docs/servers/tools.md) define the APIs used below.
 
 ```typescript
-import { Server } from '@modelcontextprotocol/sdk/server/index.js';
-import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import {
-  type CallToolRequest,
-  CallToolRequestSchema,
-  ListToolsRequestSchema,
-  type Tool,
-} from '@modelcontextprotocol/sdk/types.js';
+import { McpServer } from '@modelcontextprotocol/server';
+import { serveStdio } from '@modelcontextprotocol/server/stdio';
+import * as z from 'zod/v4';
 
-const server = new Server(
-  { name: 'my-server', version: '0.1.0' },
-  { capabilities: { tools: {} } },
-);
+// Bind one immutable tenant credential to this server instance.
+const apiKey = credentials.apiKey;
+if (!apiKey) throw new Error('Tenant API key is required');
+const server = new McpServer({ name: 'tenant-search', version: '1.0.0' });
+server.registerTool('tenant_search', {
+  description: 'Search only the current tenant catalog.',
+  inputSchema: z.object({
+    query: z.string().min(1).max(200),
+    limit: z.number().int().min(1).max(50).default(10),
+  }).strict(),
+}, async ({ query, limit }) => ({
+  content: [{ type: 'text', text: JSON.stringify(await searchApi(apiKey, query, limit)) }],
+}));
 ```
 
-## Tool Definition
+The same schema is advertised to clients and validates arguments before the handler runs. Invalid query types, missing query, and out-of-range limits never reach `searchApi`. The handler receives typed data; a TypeScript cast on `request.params.arguments` would not validate a caller.
 
-Tools use JSON Schema for input validation:
+## Startup and credential isolation
 
-```typescript
-const TOOLS: Tool[] = [
-  {
-    name: 'my_tool',
-    description: 'What this tool does and when to use it.',
-    inputSchema: {
-      type: 'object',
-      properties: {
-        query: { type: 'string', description: 'Search query' },
-        limit: { type: 'number', description: 'Max results (default: 10)', default: 10 },
-        filters: {
-          type: 'object',
-          description: 'Optional filters',
-          properties: {
-            status: { type: 'string', enum: ['active', 'archived'] },
-          },
-        },
-      },
-      required: ['query'],
-    },
-  },
-];
+For stdio, resolve a single tenant's key in the host's secret store **before** constructing the server. `serveStdio(() => createTenantServer(credentials, searchApi))` creates a server for that connection. Keep stdout for MCP traffic and log to stderr.
 
-server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: TOOLS }));
-```
-
-## Tool Dispatch
-
-```typescript
-server.setRequestHandler(CallToolRequestSchema, async (request: CallToolRequest) => {
-  const startTime = Date.now();
-  const toolName = request.params.name;
-
-  try {
-    let data: unknown;
-
-    switch (toolName) {
-      case 'my_tool': {
-        const { query, limit = 10 } = request.params.arguments as {
-          query: string;
-          limit?: number;
-        };
-        data = await myApiCall(query, limit);
-        break;
-      }
-
-      default:
-        return {
-          content: [{ type: 'text', text: `Error: Unknown tool: ${toolName}` }],
-          isError: true,
-        };
-    }
-
-    return {
-      content: [{
-        type: 'text',
-        text: JSON.stringify({
-          data,
-          _meta: {
-            durationMs: Date.now() - startTime,
-            server: 'my-server',
-            tool: toolName,
-            timestamp: new Date().toISOString(),
-          },
-        }, null, 2),
-      }],
-    };
-  } catch (err) {
-    return {
-      content: [{
-        type: 'text',
-        text: `Error: ${err instanceof Error ? err.message : String(err)}`,
-      }],
-      isError: true,
-    };
-  }
-});
-```
-
-## Server Startup
-
-```typescript
-async function main() {
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
-}
-
-main().catch((err) => {
-  console.error('MCP server error:', err);
-  process.exit(1);
-});
-```
-
-## Credential Isolation
-
-For multi-tenant servers, use a credential override pattern:
-
-```typescript
-let _credentialOverrides: Record<string, string> = {};
-
-export async function withTenantCredentials<T>(
-  creds: Record<string, string>,
-  fn: () => Promise<T>,
-): Promise<T> {
-  _credentialOverrides = { ...creds };
-  try {
-    return await fn();
-  } finally {
-    _credentialOverrides = {};
-  }
-}
-
-// In tool handler, only the credentials for this invocation are visible.
-// A missing withTenantCredentials call must not reuse the previous tenant.
-const apiKey = _credentialOverrides.API_KEY ?? process.env.API_KEY;
-if (!apiKey) {
-  return { content: [{ type: 'text', text: 'Error: API_KEY not set' }], isError: true };
-}
-```
-
-The hypervisor wraps each invocation in `withTenantCredentials`. The `finally` clears the override so the next invocation cannot read the previous tenant key.
+For a multi-tenant HTTP host, authenticate every request, resolve that tenant's credential, then create or bind a server instance with that immutable credential for the request. Never swap a module-global override around an awaited handler, and never fall back from a missing tenant credential to `process.env.API_KEY`: overlapping requests could use another tenant's key. The [executable example](examples/tenant-server.mts) exposes `createTenantSearch` so the overlap invariant can be tested without a live host.
 
 ## HTTP API Helper Pattern
 
@@ -186,7 +76,7 @@ hypervisor.registerServer({
   name: 'my-server',
   command: 'node',
   args: ['dist/servers/my-server.js'],
-  env: { API_KEY: 'resolved-at-spawn' },
+  env: { API_KEY: 'tenant-key-injected-by-secret-store' },
   requiredTier: 'pro',
 });
 ```
@@ -209,7 +99,7 @@ hypervisor.registerServer({
 
 ## Response Format
 
-Always return `content` array with `type: 'text'`:
+For text results, return a `content` array with `type: 'text'`:
 
 ```typescript
 // Success
@@ -226,7 +116,7 @@ return {
 
 ## Best Practices
 
-- Validate all inputs before API calls
+- Define a runtime `inputSchema` so invalid tool arguments never reach API calls
 - Include `_meta` with duration, server name, tool name, timestamp
 - Use descriptive tool names with a namespace prefix (e.g., `stripe_`, `memory_`)
 - Keep tool descriptions actionable: what it does, when to use it

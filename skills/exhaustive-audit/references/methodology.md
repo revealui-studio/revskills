@@ -9,7 +9,7 @@ Agents cannot hold a monorepo in context. **Accounting** is:
 | Layer | Proof |
 |-------|--------|
 | Path set | `manifest.jsonl` lists every file after excludes |
-| Content read | `coverage.jsonl` has terminal status + `lines_read` spanning file |
+| Content read | `coverage.jsonl` has review receipt + exact `lines_read`, matching read/snapshot digests |
 | Correctness | Human/agent judgment → `verified` or `finding` |
 | System shape | Optional `revkg scan` / `kg_*` map — secondary |
 
@@ -36,7 +36,7 @@ For each shard:
 1. Claim (`claim-shard.js`).
 2. For each path: full Read; classify; coverage + findings JSONL append.
 3. Large files: paginate Read with offset/limit until `lines_read[1] === manifest.lines`.
-4. Binary: `blocked` or `skipped-generated` with reason (do not pretend to "read" bytes as text).
+4. Binary: record an explicit review method and pinned byte digest; `blocked` remains incomplete. Do not pretend to read bytes as text.
 5. `--complete` the shard (status `done`). `--release` only to abandon. Update progress.
 
 ### Phase C — Cross-check pass
@@ -85,3 +85,10 @@ Use `kg_neighbors` / grep for callers after body read.
 ## Relation to audit-first SDLC
 
 Audit-first SDLC is **before a change**. Exhaustive audit is **periodic or program-level** verification of an entire tree. Both cite file:line; this framework adds the coverage ledger so multi-session work cannot silently drop paths.
+
+## Mechanical classifiers and migration
+
+W1/W4/W5 emit nonterminal review candidates, not semantic verification. Require
+an independent review receipt before closeout. Missing snapshot-backed evidence
+cannot be grandfathered into a complete audit. See the SKILL.md receipt contract
+for finding links, waivers, generated allowlists and explicit MD component scope.

@@ -3,10 +3,10 @@
   "status": "verified",
   "lines_read": [1, 240],
   "manifest_lines": 240,
-  "sha256": "recomputed-from-content-read-required-with-check-hash",
+  "read_sha256": "RECOMPUTE_SHA256_FROM_PINNED_BYTES_ACTUALLY_READ",
   "agent": "agent-id",
   "session": "session-id-optional",
-  "ts": "2026-07-22T00:00:00.000Z",
+  "ts": "2026-11-16T00:00:00.000Z",
   "finding_ids": [],
-  "notes": "finding status requires a non-empty finding_ids array in --mode code"
+  "notes": "finding_ids must resolve to this path; waiver and generated statuses require additional evidence; blocked is incomplete"
 }

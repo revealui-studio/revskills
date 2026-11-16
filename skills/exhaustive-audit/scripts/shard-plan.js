@@ -103,6 +103,11 @@ function main() {
   }
 
   const rows = loadManifest(args.manifest);
+  const paths = new Set();
+  for (const row of rows) {
+    if (typeof row.path !== "string" || !row.path || paths.has(row.path)) throw new Error("Invalid or duplicate manifest path");
+    paths.add(row.path);
+  }
   const repos = [...new Set(rows.map(repoOf))];
   const byRepo = args.byRepo === null ? repos.length > 1 : args.byRepo;
 

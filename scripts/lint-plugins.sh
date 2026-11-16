@@ -40,6 +40,9 @@ if [[ ! -d "$CACHE_ROOT" ]]; then
   exit 2
 fi
 
+# Parse complete JSON/YAML and fail closed before the existing shell policy scan.
+node "$REPO_ROOT/scripts/validate-metadata.mts" plugins "$CACHE_ROOT" || exit 1
+
 declare -a FAILURES=()
 declare -a WARNINGS=()
 PLUGIN_COUNT=0

@@ -2,10 +2,12 @@
 name: security-hardening
 description: Web application security hardening for OWASP Top 10 vulnerabilities. Use when implementing authentication, HTTP security headers, CORS, rate limiting, input validation, or reviewing code for XSS, SQL injection, CSRF, or SSRF. Covers CSP, HSTS, session cookies, bcrypt, Zod validation, and secrets management.
 license: MIT
-allowed-tools: Read, Grep, Glob
+compatibility: Agent Skills host; executable TypeScript examples require Node.js 24+, pnpm 10 and the dependencies in the revskills package manifest.
+allowed-tools: Read Grep Glob
 metadata:
+  pack: public
   author: RevealUI Studio
-  version: "0.1.1"
+  version: "0.1.2"
   website: https://revealui.com
 ---
 
@@ -47,7 +49,7 @@ const corsOptions = {
 const sessionCookie = {
   httpOnly: true,    // No JavaScript access
   secure: true,      // HTTPS only
-  sameSite: 'lax',   // CSRF protection
+  sameSite: 'lax',   // defense in depth; not a complete CSRF defense
   maxAge: 86400,     // 24 hours
   path: '/',
 };
@@ -62,7 +64,10 @@ const valid = await compare(input, hashed);
 - Session-only auth (no JWT in cookies — JWTs can't be revoked)
 - bcrypt with 12+ rounds (not MD5, SHA-256, or plain text)
 - httpOnly cookies prevent XSS token theft
-- sameSite=lax prevents CSRF on state-changing requests
+- SameSite=Lax reduces cross-site cookie sending but does not replace CSRF protection. Sibling subdomains remain same-site, and top-level GET requests still carry the cookie.
+- Keep GET/HEAD free of state changes. For cookie-authenticated POST/PUT/PATCH/DELETE, validate a CSRF token or the Origin/Referer against the exact allowed origin. Reject missing or mismatched evidence.
+- A runnable Origin-plus-token guard is in [`examples/csrf.mts`](examples/csrf.mts); authenticate the session separately and use a per-session unpredictable token with constant-time comparison in production.
+- See the OWASP CSRF cheat sheet: https://cheatsheetseries.owasp.org/cheatsheets/Cross-Site_Request_Forgery_Prevention_Cheat_Sheet.html
 
 ## Input Validation
 

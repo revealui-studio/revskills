@@ -158,7 +158,7 @@ function walk(rootAbs, relBase, excludeSet, records, repo, extAllow, snapshotDir
   try {
     entries = fs.readdirSync(rootAbs, { withFileTypes: true });
   } catch (err) {
-    process.stderr.write(`manifest-build: skip unreadable dir ${rootAbs}: ${err.message}\n`);
+    records.push({ path: relBase || path.basename(rootAbs), kind: "unreadable-directory", error: err.message, repo });
     return;
   }
   for (const ent of entries) {
@@ -170,14 +170,18 @@ function walk(rootAbs, relBase, excludeSet, records, repo, extAllow, snapshotDir
       walk(child, path.join(relBase, name), excludeSet, records, repo, extAllow, snapshotDir, manifestDir, outAbs);
       continue;
     }
-    if (!ent.isFile()) continue;
+    const symlink = ent.isSymbolicLink();
+    if (!ent.isFile() && !symlink) {
+      records.push({ path: path.join(relBase, name).split(path.sep).join("/"), kind: "unsupported", error: "Unsupported filesystem entry", repo });
+      continue;
+    }
     if (extAllow && !extAllow.has(path.extname(name).toLowerCase())) continue;
     const abs = path.join(rootAbs, name);
     if (abs === outAbs) continue;
     const rel = path.join(relBase, name).split(path.sep).join("/");
     let buf;
     try {
-      buf = fs.readFileSync(abs);
+      buf = symlink ? Buffer.from(fs.readlinkSync(abs), "utf8") : fs.readFileSync(abs);
     } catch (err) {
       records.push({
         path: rel,
@@ -201,7 +205,8 @@ function walk(rootAbs, relBase, excludeSet, records, repo, extAllow, snapshotDir
       sha256,
       snapshot,
       ext,
-      kind: binary ? "binary" : classify(rel, ext),
+      kind: symlink ? "symlink" : binary ? "binary" : classify(rel, ext),
+      ...(symlink ? { link_target: buf.toString("utf8") } : {}),
       binary,
       repo,
     });
@@ -236,13 +241,20 @@ function main() {
       repos: args.repos,
       includeArchive: args.includeArchive,
     });
-    const kids = fs.readdirSync(rootAbs, { withFileTypes: true });
-    for (const ent of kids) {
-      if (!ent.isDirectory()) continue;
-      if (!shouldWalkFleetChild(ent.name, allow)) continue;
-      walked.push(ent.name);
-      walk(path.join(rootAbs, ent.name), ent.name, excludeSet, records, ent.name, extAllow, snapshotDir, manifestDir, outAbs);
+    const kids = new Map(fs.readdirSync(rootAbs, { withFileTypes: true }).map((entry) => [entry.name, entry]));
+    for (const name of allow) {
+      if (!name || name === "." || name === ".." || name.includes("/") || name.includes("\\") || !shouldWalkFleetChild(name, allow)) {
+        throw new Error(`Invalid declared fleet component: ${name}`);
+      }
+      const entry = kids.get(name);
+      if (!entry || !entry.isDirectory()) {
+        records.push({ path: name, kind: "missing-component", repo: name, error: "Declared fleet directory is missing or is not a directory" });
+        continue;
+      }
+      walked.push(name);
+      walk(path.join(rootAbs, name), name, excludeSet, records, name, extAllow, snapshotDir, manifestDir, outAbs);
     }
+
   } else {
     const repo = path.basename(rootAbs);
     walked.push(repo);
@@ -261,6 +273,7 @@ function main() {
     if (typeof r.bytes === "number") totalBytes += r.bytes;
   }
   fs.closeSync(fd);
+  if (records.some((record) => record.error)) process.exitCode = 1;
 
   process.stdout.write(
     JSON.stringify(

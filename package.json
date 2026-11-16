@@ -1,0 +1,35 @@
+{
+  "name": "@revealui/revskills",
+  "version": "0.2.0",
+  "private": true,
+  "engines": {
+    "node": ">=24.13.1"
+  },
+  "packageManager": "pnpm@10.28.2",
+  "scripts": {
+    "test": "node scripts/build-hooks.mts --check && node scripts/verify-policy-projections.mts . && bash test/run-tests.sh && vitest run && tsc -p tsconfig.public-examples.json && tsc -p tsconfig.tools.json && node scripts/generate-skill-inventory.mts --check",
+    "test:unit": "vitest run",
+    "lint:skills": "bash scripts/lint-all-skills.sh",
+    "lint:plugins": "bash scripts/lint-plugins.sh .",
+    "lint:shell": "node scripts/check-shell-entrypoints.mts",
+    "build:hooks": "node scripts/build-hooks.mts"
+  },
+  "dependencies": {
+    "mdast-util-from-markdown": "2.1.0",
+    "semver": "7.8.6",
+    "smol-toml": "1.9.1",
+    "toml-eslint-parser": "1.0.3",
+    "yaml": "2.9.1"
+  },
+  "devDependencies": {
+    "@electric-sql/client": "1.5.28",
+    "@modelcontextprotocol/server": "2.4.0",
+    "@types/node": "26.6.6",
+    "@types/semver": "7.8.0",
+    "esbuild": "0.28.2",
+    "typescript": "7.0.2",
+    "vitest": "5.1.0",
+    "yjs": "13.6.33",
+    "zod": "4.6.7"
+  }
+}
