@@ -2,10 +2,12 @@
 name: knowledge-graph
 description: Query the fleet knowledge graph before grep for cross-repo questions (what depends on X, where is Y enforced, what did the dependency graph look like on date D, what has any agent learned about Z). Covers the kg_* MCP tool surface, kg_context as the default entry point, point-in-time queries, publishing agent-fact episodes, and the revkg CLI equivalents. GAP-349.
 license: MIT
-allowed-tools: Bash, Read, Grep, Glob
+compatibility: RevealFleet knowledge graph via revkg CLI or kg_* MCP tools; unavailable without that service.
+allowed-tools: Bash Read Grep Glob
 metadata:
+  pack: studio
   author: RevealUI Studio
-  version: "0.2.0"
+  version: "0.2.1"
   website: https://revealui.com
 ---
 

@@ -7,12 +7,14 @@ description: |
   revkit scripts/weekly-wsl-backup.ps1 with staleness alerting). Retained for
   reference; will be removed in a future revskills major.
 license: MIT
-allowed-tools: Bash, Read
+compatibility: Deprecated historical reference for RevealFleet Studio on WSL; current disaster recovery uses RevKit weekly snapshots.
+allowed-tools: Bash Read
 metadata:
+  pack: studio
   author: RevealUI Studio
-  version: "0.3.1"
+  version: "0.3.2"
   website: https://revealui.com
-  deprecated: true
+  deprecated: "true"
   deprecated-at: "2026-07-02"
   superseded-by: revkit weekly WSL snapshot task (no in-repo skill successor)
 ---

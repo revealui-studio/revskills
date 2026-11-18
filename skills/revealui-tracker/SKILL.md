@@ -6,15 +6,14 @@ description: >
   Owner never runs shell commands — agents and SessionStart call tracker.js
   sync. Do not invent parallel queues or paste CLI recipes for the owner.
 license: MIT
-allowed-tools: Bash, Read
+compatibility: RevealFleet Studio layout at REVEALFLEET_ROOT; executable helpers require Node.js 24+ and pnpm 10 when invoked.
+allowed-tools: Bash Read
 metadata:
+  pack: studio
   author: RevealUI Studio
-  version: "0.4.0"
+  version: "0.4.1"
   website: https://revealui.com
-  related:
-    - revealui-checkpoint
-    - revealui-pickup
-    - next
+  related: "revealui-checkpoint revealui-pickup next"
 ---
 
 # Fleet TRACKER (`/tracker`) — owner-zero shell

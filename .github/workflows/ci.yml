@@ -19,8 +19,9 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
-      - name: Verify copy-mode lockstep
-        run: bash scripts/verify-copy-lockstep.sh --target "$GITHUB_WORKSPACE"
+      - uses: ./.github/actions/setup
+      - name: Verify canonical policies and adapter projections
+        run: node scripts/verify-policy-projections.mts "$GITHUB_WORKSPACE"
 
   skills-lint:
     name: Skill Lint
@@ -30,6 +31,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
+      - uses: ./.github/actions/setup
       - name: Lint all skills
         run: bash scripts/lint-all-skills.sh
 
@@ -41,6 +43,7 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
+      - uses: ./.github/actions/setup
       - name: Lint plugin metadata and security
         run: bash scripts/lint-plugins.sh .
 
@@ -63,10 +66,11 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
+      - uses: ./.github/actions/setup
       - name: Lint shell scripts
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck
-          find scripts/ bin/ .githooks/ test/ -name '*.sh' -type f | xargs shellcheck --severity=warning
+          node scripts/check-shell-entrypoints.mts
 
   validator-tests:
     name: Validator Test Suite
@@ -76,8 +80,9 @@ jobs:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           persist-credentials: false
+      - uses: ./.github/actions/setup
       - name: Run validator tests (fixtures + full skills/plugin/leak corpus)
-        run: bash test/run-tests.sh
+        run: pnpm test
 
   structure:
     name: Structure Validation
@@ -101,7 +106,7 @@ jobs:
               errors=$((errors+1))
             fi
 
-            # SKILL.md must have YAML frontmatter with name + description
+            # SKILL.md must open with YAML frontmatter. name and description are skills-lint.
             if [ -f "$dir/SKILL.md" ]; then
               if ! head -1 "$dir/SKILL.md" | grep -q '^---$'; then
                 printf 'FAIL: %s/SKILL.md missing YAML frontmatter\n' "$skill" >&2

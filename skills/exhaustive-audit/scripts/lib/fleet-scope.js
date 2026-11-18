@@ -10,10 +10,12 @@
 const DEFAULT_FLEET_REPOS = [
   ".jv",
   "agency",
+  "docs",
   "demo-offline-sync",
   "revcon",
   "revdev",
   "revealui",
+  "revmind",
   "revforge",
   "revkit",
   "revskills",
@@ -44,9 +46,9 @@ function shouldWalkFleetChild(name, allow) {
 }
 
 function repoIdFromName(name) {
-  return String(name)
-    .replace(/^\./, "")
-    .replace(/[^A-Za-z0-9._-]+/g, "-");
+  // Reversible UTF-8 hex encoding avoids normalization collisions and keeps IDs
+  // inside the same alphabet accepted by claim-shard.
+  return Buffer.from(String(name), "utf8").toString("hex");
 }
 
 module.exports = {

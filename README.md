@@ -2,7 +2,7 @@
 
 [Agent Skills](https://agentskills.io) for modern web development. Built by [RevealUI Studio](https://revealui.com).
 
-**Vendor-agnostic:** skill trees under `skills/` are the source of truth. Compatible with Claude Code, Grok, Cursor, OpenCode, VS Code, and any tool that implements the Agent Skills standard. The `.claude-plugin/` directory is a **Claude Code marketplace adapter**, not the only install path.
+**Agent Skills format:** skill trees under `skills/` are the source of truth. Compatible hosts can discover them; individual skills declare any Studio layout, adapter, service, or executable-helper requirements in frontmatter. The `.claude-plugin/` directory is a **Claude Code marketplace adapter**, not the only install path.
 
 ## Install
 
@@ -27,83 +27,53 @@ npx skills add RevealUIStudio/revskills --skill next-best-practices
 
 ## Skills
 
-**29** skills total. Public OSS pack needs no RevealFleet layout. Studio workflow pack assumes `$REVEALFLEET_ROOT` (and related Studio services), but not a single vendor CLI.
+<!-- skill-inventory:start -->
+**29 skills:** 13 public patterns and 16 Studio-context skills. Metadata and asset counts are generated from the skill directories.
 
-### Framework & app patterns
+| Skill | Pack | Executable assets | Compatibility |
+|---|---|---:|---|
+| [drizzle-db](skills/drizzle-db/) | public | 0 | Any Agent Skills host; examples require the framework packages named in this skill. |
+| [electric-sync](skills/electric-sync/) | public | 1 | Agent Skills host; executable TypeScript examples require Node.js 24+, pnpm 10 and the dependencies in the revskills package manifest. |
+| [exhaustive-audit](skills/exhaustive-audit/) | public | 13 | Agent Skills host with Node.js 24+ and local filesystem access for CLI helpers. Fleet mode requires a RevealFleet directory layout. |
+| [grok-bot-checkpoint](skills/grok-bot-checkpoint/) | public | 0 | Grok Bot or compatible assistant with a writable checkpoint directory (see skill); no RevealFleet layout. |
+| [knowledge-graph](skills/knowledge-graph/) | studio | 0 | RevealFleet knowledge graph via revkg CLI or kg_* MCP tools; unavailable without that service. |
+| [mcp-server](skills/mcp-server/) | public | 1 | Agent Skills host; executable TypeScript examples require Node.js 24+, pnpm 10 and the dependencies in the revskills package manifest. |
+| [multi-agent-memory](skills/multi-agent-memory/) | public | 1 | Agent Skills host; executable TypeScript examples require Node.js 24+, pnpm 10 and the dependencies in the revskills package manifest. |
+| [next-best-practices](skills/next-best-practices/) | public | 0 | Any Agent Skills host; examples require the framework packages named in this skill. |
+| [redundancy-scan](skills/redundancy-scan/) | public | 6 | Agent Skills host with Node.js 24+ and local filesystem access for CLI helpers. Fleet mode requires a RevealFleet directory layout. |
+| [revealui-checkpoint](skills/revealui-checkpoint/) | studio | 0 | RevealFleet Studio layout at REVEALFLEET_ROOT; executable helpers require Node.js 24+ and pnpm 10 when invoked. |
+| [revealui-cleanup](skills/revealui-cleanup/) | studio | 0 | RevealFleet Studio layout at REVEALFLEET_ROOT; executable helpers require Node.js 24+ and pnpm 10 when invoked. |
+| [revealui-coordinate](skills/revealui-coordinate/) | studio | 1 | RevealFleet Studio layout at REVEALFLEET_ROOT; executable helpers require Node.js 24+ and pnpm 10 when invoked. |
+| [revealui-design](skills/revealui-design/) | public | 0 | Agent Skills host; production React uses @revealui/tokens/design-context and @revealui/presentation. Static HTML mockups need no package runtime. |
+| [revealui-design-status](skills/revealui-design-status/) | studio | 0 | RevealFleet Studio layout and Claude design adapter; requires the configured claude.ai design project. |
+| [revealui-doctor](skills/revealui-doctor/) | studio | 0 | RevealFleet Studio layout at REVEALFLEET_ROOT; executable helpers require Node.js 24+ and pnpm 10 when invoked. |
+| [revealui-ops](skills/revealui-ops/) | studio | 0 | RevealFleet Studio layout at REVEALFLEET_ROOT; executable helpers require Node.js 24+ and pnpm 10 when invoked. |
+| [revealui-pickup](skills/revealui-pickup/) | studio | 0 | RevealFleet Studio layout at REVEALFLEET_ROOT; executable helpers require Node.js 24+ and pnpm 10 when invoked. |
+| [revealui-recover](skills/revealui-recover/) | studio | 0 | RevealFleet Studio layout at REVEALFLEET_ROOT; executable helpers require Node.js 24+ and pnpm 10 when invoked. |
+| [revealui-rollup](skills/revealui-rollup/) | studio | 0 | RevealFleet Studio layout at REVEALFLEET_ROOT; executable helpers require Node.js 24+ and pnpm 10 when invoked. |
+| [revealui-skills-test](skills/revealui-skills-test/) | studio | 0 | RevealFleet Studio layout at REVEALFLEET_ROOT; executable helpers require Node.js 24+ and pnpm 10 when invoked. |
+| [revealui-snapshot](skills/revealui-snapshot/) | studio | 0 | RevealFleet Studio layout at REVEALFLEET_ROOT; executable helpers require Node.js 24+ and pnpm 10 when invoked. |
+| [revealui-sync-lts](skills/revealui-sync-lts/) | studio | 0 | Deprecated historical reference for RevealFleet Studio on WSL; current disaster recovery uses RevKit weekly snapshots. |
+| [revealui-sync-rules](skills/revealui-sync-rules/) | studio | 0 | RevealFleet Studio layout at REVEALFLEET_ROOT; executable helpers require Node.js 24+ and pnpm 10 when invoked. |
+| [revealui-tracker](skills/revealui-tracker/) | studio | 0 | RevealFleet Studio layout at REVEALFLEET_ROOT; executable helpers require Node.js 24+ and pnpm 10 when invoked. |
+| [revvault-resolve](skills/revvault-resolve/) | studio | 0 | RevealFleet Studio layout and configured RevVault; secret values must remain in the vault. |
+| [security-hardening](skills/security-hardening/) | public | 1 | Agent Skills host; executable TypeScript examples require Node.js 24+, pnpm 10 and the dependencies in the revskills package manifest. |
+| [tailwind-v4](skills/tailwind-v4/) | public | 0 | Any Agent Skills host; examples require the framework packages named in this skill. |
+| [vitest-testing](skills/vitest-testing/) | public | 0 | Any Agent Skills host; examples require the framework packages named in this skill. |
+| [yjs-collaboration](skills/yjs-collaboration/) | public | 1 | Agent Skills host; executable TypeScript examples require Node.js 24+, pnpm 10 and the dependencies in the revskills package manifest. |
 
-| Skill | Description |
-|-------|-------------|
-| [next-best-practices](skills/next-best-practices/) | Next.js 15+ App Router — RSC, PPR, caching, server actions, metadata |
-| [tailwind-v4](skills/tailwind-v4/) | Tailwind CSS v4 — @theme, CSS-first config, CVA, migration from v3 |
-| [security-hardening](skills/security-hardening/) | OWASP Top 10 — CSP, CORS, auth, rate limiting, XSS, CSRF |
+Executable assets include bundled `.js`, `.ts`, `.mts`, `.sh`, `.py`, and similar source files; a skill can contain guidance plus runnable helpers. The retired RevealUI design `ui_kits` are pointer pages, not self-contained component kits.
+<!-- skill-inventory:end -->
 
-### Data & sync
+The full generated asset list is in [Skill inventory](docs/SKILL_INVENTORY.md). Studio skills name their required layout and services in `compatibility`; the public pack does not require a RevealFleet checkout, though individual examples require the named framework packages.
 
-| Skill | Description |
-|-------|-------------|
-| [drizzle-db](skills/drizzle-db/) | Drizzle ORM — schema design, migrations, queries, NeonDB |
-| [electric-sync](skills/electric-sync/) | ElectricSQL v1.x real-time sync — shapes, proxy routes, mutations, offline-first |
-| [yjs-collaboration](skills/yjs-collaboration/) | Yjs CRDT collaboration — Y.Doc/Map/Array/Text, offline-first editing, conflict-free merges |
-
-### AI & agents
-
-| Skill | Description |
-|-------|-------------|
-| [mcp-server](skills/mcp-server/) | Model Context Protocol server development — JSON-RPC, tools, resources, credential isolation |
-| [multi-agent-memory](skills/multi-agent-memory/) | Multi-agent shared memory — append-only facts, Yjs scratchpads, LLM-powered reconciliation |
-
-### Session handoff
-
-Portable session close-out. Does not require RevealFleet. Studio/RevealFleet sessions keep using [revealui-checkpoint](skills/revealui-checkpoint/).
-
-| Skill | Description |
-|-------|-------------|
-| [grok-bot-checkpoint](skills/grok-bot-checkpoint/) | Portable Grok Bot / desktop-assistant checkpoint — rolling fragments, CURRENT-HANDOFF, CHECKPOINT-READY |
-
-### Testing
-
-| Skill | Description |
-|-------|-------------|
-| [vitest-testing](skills/vitest-testing/) | Vitest patterns — mocking, coverage, PGlite, monorepo testing |
-
-### Audit & architecture
-
-| Skill | Description |
-|-------|-------------|
-| [exhaustive-audit](skills/exhaustive-audit/) | Multi-session full-tree audit — inventory, shards, coverage ledger, optional knowledge-graph map |
-| [redundancy-scan](skills/redundancy-scan/) | Find duplication, deprecation markers, and accidental dual implementations across the fleet |
-| [knowledge-graph](skills/knowledge-graph/) | Query the fleet knowledge graph (MCP `kg_*` / `revkg`) before broad greps for dependency and history questions |
-
-### Design
-
-| Skill | Description |
-|-------|-------------|
-| [revealui-design](skills/revealui-design/) | Brand-correct UI for RevealUI Studio — Cobalt design system, voice rules, and self-contained marketing + admin UI kits |
-
-### RevealUI Workflow (Studio layout)
-
-These skills assume RevealFleet layout (`$REVEALFLEET_ROOT/`, private planning hub, RevVault, RevDev RPC daemon). They are **equal-adapter** Studio skills (Claude, Grok, …), not Claude-only products. Canonical copies live here; Studio machines may symlink into vendor command homes.
+### Operator boundary
 
 Three planes: product runtime, operator laptop, Studio daemon. `bin/rfloop` is operator-only: a PR/CI operator disk state machine only (P0 stub; no LLM; auto-merge locked). It is not the fleet brain or the product AgentRuntime. Prefer `rfloop`; `bin/revloop` is a rename shim.
 
-| Skill | Description |
-|-------|-------------|
-| [revealui-recover](skills/revealui-recover/) | Diagnose and recover from crashed/interrupted Studio sessions (Claude + Grok markers) |
-| [revealui-checkpoint](skills/revealui-checkpoint/) | Checkpoint checklist — tracking surfaces, handoff fragments, workboard log (Studio/RevealFleet sibling of [grok-bot-checkpoint](skills/grok-bot-checkpoint/)) |
-| [revealui-pickup](skills/revealui-pickup/) | Consume CURRENT-HANDOFF and continue agent-doable work (`/pickup`; not `/next`) |
-| [revealui-snapshot](skills/revealui-snapshot/) | Mid-session fidelity snapshot for checkpoint composition (auto session id) |
-| [revealui-ops](skills/revealui-ops/) | Thin `/ops` shim onto the operational-workflow-layer runner |
-| [revealui-cleanup](skills/revealui-cleanup/) | One-off `/cleanup` → workflow `cleanup-session` (report default; `--fix` gated) |
-| [revealui-rollup](skills/revealui-rollup/) | One-off `/rollup` → workflow `master-handoff-regen` (report-first; never from checkpoint) |
-| [revealui-doctor](skills/revealui-doctor/) | Health check for equal-adapter Studio homes + fleet workflow |
-| [revealui-design-status](skills/revealui-design-status/) | **Claude-adapter:** DesignSync / claude.ai design project change detection |
-| [revealui-sync-lts](skills/revealui-sync-lts/) | **Deprecated** — DR moved to weekly WSL snapshots (revkit) |
-| [revealui-sync-rules](skills/revealui-sync-rules/) | Rules distribution topology (revcon / control-layer entry preferred) |
-| [revealui-skills-test](skills/revealui-skills-test/) | Static validator for Studio skill installs (multi-home + revskills SoT) |
-| [revealui-tracker](skills/revealui-tracker/) | Fleet TRACKER auto-sync (`/tracker`, `/next`) |
-| [revvault-resolve](skills/revvault-resolve/) | Resolve keys from revvault. Never print values. Never Stripe Projects. |
-
 ## Contributing
+
+The two Grok hook entrypoints copied by RevKit are generated standalone bundles. See [Hook bundle build instructions](docs/HOOK_BUNDLES.md) before changing their source or imported libraries.
 
 PRs welcome. Each skill must:
 
@@ -122,6 +92,7 @@ git config core.hooksPath .githooks
 1. **skills-lint** — SKILL.md + optional multi-home command symlink check (`scripts/lint-all-skills.sh`)
 2. **plugin-lint** — in-repo plugin metadata (`scripts/lint-plugins.sh .`; Claude cache optional)
 3. **private-leak-scan** — private paths / secrets (`scripts/check-no-private-leaks.sh`)
+4. **md-truth-self-test** — `skills/exhaustive-audit/scripts/md-truth-check.js --self-test`
 
 Bypass (rare, document in the PR): `SKIP_PREPUSH=1 git push`.
 

@@ -38,7 +38,7 @@ unset _path
 # Anchored where possible to keep false-positive noise low.
 PATTERNS=(
   "lit-username|joshua[-]v-dev|literal developer username; use a placeholder"
-  "abs-home-path|/home/[a-z][a-z0-9_-]+|absolute user home path (/home/<username>/...)"
+  "abs-home-path|/home/[a-z][a-z0-9_-]*|absolute user home path (/home/<username>/...)"
   "abs-windows-user|[Cc]:[\\\\/]Users[\\\\/][A-Za-z0-9_-]+|absolute Windows user path (C:\\\\Users\\\\<name>)"
   "abs-wsl-windows-user|/mnt/[a-z]/Users/[A-Za-z0-9_-]+|WSL mount of a Windows user path (/mnt/c/Users/<name>)"
   "private-jv-repo|[~/][A-Za-z][A-Za-z0-9._-]*/\\.jv|private repo path (~/<fleet>/.jv/...)"
@@ -173,6 +173,13 @@ for entry in "${PATTERNS[@]}"; do
   reason="${rest#*|}"
 
   # grep -rEIn: recursive, extended-regex, skip binary, show line numbers.
+  # grep status 1 means no matches; status 2 means the scan was incomplete.
+  scan_output="$(grep -rEIn "${grep_excludes[@]}" -- "$regex" "${SCAN_PATHS[@]}" 2>/dev/null)"
+  scan_status=$?
+  if (( scan_status > 1 )); then
+    echo "[leak-check] error: grep could not complete the requested scan" >&2
+    exit 2
+  fi
   while IFS= read -r hit; do
     [[ -z "$hit" ]] && continue
     file="${hit%%:*}"
@@ -213,7 +220,7 @@ for entry in "${PATTERNS[@]}"; do
       printf '[LEAK:%s] %s:%s — %s\n  → %s\n' "$tag" "$file" "$line" "$reason" "$content"
     fi
     violations=$((violations+1))
-  done < <(grep -rEIn "${grep_excludes[@]}" -- "$regex" "${SCAN_PATHS[@]}" 2>/dev/null || true)
+  done <<< "$scan_output"
 done
 
 if [[ -n "${LEAK_JSON:-}" ]]; then

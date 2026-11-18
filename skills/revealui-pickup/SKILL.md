@@ -7,17 +7,14 @@ description: >
   Not /next (TRACKER free surfaces). Not /resume (vendor transcript).
   Not /recover (crash inventory).
 license: MIT
-allowed-tools: Bash, Read, Grep
+compatibility: RevealFleet Studio layout at REVEALFLEET_ROOT; executable helpers require Node.js 24+ and pnpm 10 when invoked.
+allowed-tools: Bash Read Grep
 metadata:
+  pack: studio
   author: RevealUI Studio
-  version: "0.2.0"
+  version: "0.2.1"
   website: https://revealui.com
-  related:
-    - revealui-checkpoint
-    - revealui-tracker
-    - revealui-recover
-    - revealui-cleanup
-    - revealui-rollup
+  related: "revealui-checkpoint revealui-tracker revealui-recover revealui-cleanup revealui-rollup"
 ---
 
 # Pickup (`/pickup`) — consume CURRENT-HANDOFF

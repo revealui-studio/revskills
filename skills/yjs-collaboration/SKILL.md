@@ -2,10 +2,12 @@
 name: yjs-collaboration
 description: Yjs CRDT collaboration patterns for real-time and offline-first editing. Use when building collaborative documents, shared scratchpads, or multi-user editing. Covers Y.Doc, Y.Map, Y.Array, Y.Text, state encoding, structured patches, server-side document manipulation, and conflict-free merge semantics.
 license: MIT
-allowed-tools: Read, Grep, Glob
+compatibility: Agent Skills host; executable TypeScript examples require Node.js 24+, pnpm 10 and the dependencies in the revskills package manifest.
+allowed-tools: Read Grep Glob
 metadata:
+  pack: public
   author: RevealUI Studio
-  version: "0.1.0"
+  version: "0.1.1"
   website: https://revealui.com
 ---
 
@@ -51,111 +53,35 @@ root.set('items', items);
 
 ## State Encoding & Persistence
 
-```typescript
-// Encode full state as a binary update
-const state = Y.encodeStateAsUpdate(doc);       // Uint8Array
-const vector = Y.encodeStateVector(doc);          // Uint8Array
+Yjs binary updates are commutative, associative, and idempotent when every update is delivered. Persist each incremental update as an **atomic append**; do not write a whole state computed from a stale row. The full [executable example](examples/append-updates.mts) applies loaded updates, captures a state vector, and appends only the new delta. See the official [Yjs document updates guide](https://docs.yjs.dev/api/document-updates).
 
-// Persist to database (Postgres bytea column)
-await db.update(documents)
-  .set({
-    state: Buffer.from(state),
-    stateVector: Buffer.from(vector),
-  })
-  .where(eq(documents.id, docId));
-
-// Restore from database
-const doc = new Y.Doc();
-Y.applyUpdate(doc, new Uint8Array(storedState));
+```sql
+CREATE TABLE yjs_document_updates (
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  document_id TEXT NOT NULL,
+  update BYTEA NOT NULL
+);
+CREATE INDEX yjs_document_updates_document_id_id_idx
+  ON yjs_document_updates (document_id, id);
 ```
+
+For `appendUpdate`, issue one `INSERT` per delta in the database. `loadUpdates` selects every row for a document in `id` order. PostgreSQL commits concurrent inserts without replacing another writer's delta. A snapshot compaction process may merge updates, but it must preserve all updates added during compaction with a transaction or version check. Multi-writer tests should reconstruct the document after simultaneous appends.
 
 ## Server-Side Document Manipulation
 
-For CLI agents or batch processes that cannot use WebSocket:
+Use [`appendPatch`](examples/append-updates.mts) for CLI or batch edits. It loads persisted updates, applies a patch to a fresh `Y.Doc`, computes only the delta since the pre-patch state vector, and appends that delta. Stable top-level names such as `text:findings` and `list:findings` avoid concurrent creation of conflicting nested types. Two concurrent `set_key` writes to the same key still follow Y.Map conflict resolution; use application-level version checks if both values must be retained.
 
 ```typescript
-import * as Y from 'yjs';
-
-function applyStructuredPatch(
-  existingState: Uint8Array | null,
-  patchType: string,
-  path: string,
-  content: string,
-): { state: Uint8Array; stateVector: Uint8Array } {
-  const doc = new Y.Doc();
-
-  if (existingState) {
-    Y.applyUpdate(doc, existingState);
-  }
-
-  const root = doc.getMap('root');
-
-  switch (patchType) {
-    case 'set_key':
-      root.set(path, content);
-      break;
-
-    case 'append_section': {
-      let section = root.get(path);
-      if (!(section instanceof Y.Text)) {
-        section = new Y.Text();
-        root.set(path, section);
-      }
-      section.insert(section.length, content);
-      break;
-    }
-
-    case 'append_item': {
-      let arr = root.get(path);
-      if (!(arr instanceof Y.Array)) {
-        arr = new Y.Array();
-        root.set(path, arr);
-      }
-      arr.push([content]);
-      break;
-    }
-
-    case 'replace_section': {
-      const text = new Y.Text();
-      text.insert(0, content);
-      root.set(path, text);
-      break;
-    }
-  }
-
-  const result = {
-    state: Y.encodeStateAsUpdate(doc),
-    stateVector: Y.encodeStateVector(doc),
-  };
-
-  doc.destroy();
-  return result;
-}
+await appendPatch(store, documentId, {
+  kind: 'append_item',
+  path: 'findings',
+  content: 'Database index missing',
+});
 ```
 
 ## Reading Document Content
 
-```typescript
-function readDocument(state: Uint8Array): Record<string, unknown> {
-  const doc = new Y.Doc();
-  Y.applyUpdate(doc, state);
-  const root = doc.getMap('root');
-  const result: Record<string, unknown> = {};
-
-  for (const [key, value] of root.entries()) {
-    if (value instanceof Y.Text) {
-      result[key] = value.toString();
-    } else if (value instanceof Y.Array) {
-      result[key] = value.toArray();
-    } else {
-      result[key] = value;
-    }
-  }
-
-  doc.destroy();
-  return result;
-}
-```
+Replay every persisted update into a new document, then read the stable top-level shared types. The executable example's `readDocument(store, documentId)` returns text, findings, and map values and destroys its temporary `Y.Doc` in `finally`.
 
 ## Merging Two Documents
 
@@ -173,19 +99,6 @@ const state2 = Y.encodeStateAsUpdate(doc2);
 Y.applyUpdate(doc1, state2); // doc1 now has both edits
 Y.applyUpdate(doc2, state1); // doc2 now has both edits
 // Both docs are identical after merge
-```
-
-## Database Schema
-
-```sql
-CREATE TABLE yjs_documents (
-  id TEXT PRIMARY KEY,
-  state BYTEA NOT NULL,
-  state_vector BYTEA,
-  connected_clients INTEGER NOT NULL DEFAULT 0,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
 ```
 
 ## WebSocket Provider (Real-Time)
@@ -233,4 +146,4 @@ awareness.on('change', () => {
 - Prefer `Y.Text` over plain strings for content that may be collaboratively edited
 - Use `Y.Array` for ordered lists (append-heavy patterns)
 - Use `Y.Map` as the root container for structured documents
-- Server-side patches and WebSocket edits merge cleanly via CRDT semantics
+- Server-side patches and WebSocket edits merge when every update is delivered; persist append-only updates or use a transactionally safe merge

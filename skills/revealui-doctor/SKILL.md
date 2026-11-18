@@ -2,10 +2,12 @@
 name: revealui-doctor
 description: Health check for RevealFleet Studio workflow across equal adapters (Claude + Grok at minimum). Verifies hook/rules homes, skill preconditions, git integrity, workboard freshness, daemon status, MCP configs, env leaks, toolchain, and disaster-recovery snapshot state.
 license: MIT
-allowed-tools: Bash, Read, Glob, Grep
+compatibility: RevealFleet Studio layout at REVEALFLEET_ROOT; executable helpers require Node.js 24+ and pnpm 10 when invoked.
+allowed-tools: Bash Read Glob Grep
 metadata:
+  pack: studio
   author: RevealUI Studio
-  version: "0.4.3"
+  version: "0.4.4"
   website: https://revealui.com
 ---
 

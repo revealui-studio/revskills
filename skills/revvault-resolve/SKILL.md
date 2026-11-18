@@ -11,13 +11,14 @@ description: >
   Stripe Projects. Look up the vault path, then inject with revvault run
   or with-secrets, or stop.
 license: MIT
-allowed-tools: Bash, Read, Grep
+compatibility: RevealFleet Studio layout and configured RevVault; secret values must remain in the vault.
+allowed-tools: Bash Read Grep
 metadata:
+  pack: studio
   author: RevealUI Studio
-  version: "0.1.1"
+  version: "0.1.2"
   website: https://revealui.com
-  related:
-    - security-hardening
+  related: "security-hardening"
 ---
 
 # revvault-resolve
@@ -62,11 +63,11 @@ revvault run --env STRIPE_SECRET_KEY=revealui/dev/stripe/secret-key -- <cmd>
 with-secrets stripe neon -- <cmd>
 ```
 
-   Local hydrate from a prefix (mirror, not the store):
-
-```bash
-revvault export-env revealui/dev/
-```
+   If a child process needs several values, use `with-secrets` or repeated
+   `revvault run --env` mappings. `revvault export-env` prints decrypted values
+   to stdout, so never invoke it through an agent tool or a captured terminal.
+   A required local mirror is a separate vault-private owner operation with a
+   reviewed destination and permissions; do not use it for routine resolution.
 
 4. **Miss:** stop. Name the vault path the owner should set
    (`revvault set <path>`). Do not open a dashboard. Do not fabricate
@@ -82,6 +83,7 @@ create `.env.dev` / `.env.production` as a second scheme.
 ## Do not
 
 - Display secret values. Paths and env key names only.
+- Run bare `revvault export-env` in an agent session; it prints values.
 - Use `$(revvault get …)` in any flag or argv. Stream-safe inject only.
 - Hand-edit `.env` / `.env.*` as the source of truth.
 - Hand-edit `.projects/` or run Stripe Projects.

@@ -8,11 +8,13 @@
  * Usage:
  *   node scripts/recover-inventory.js [--hours 72] [--summary]
  *
- * Always exits 0. Never prints secret values, JWTs, or vault paths' contents.
+ * Best-effort discovery. Explicit private-index writes fail closed.
+ * No transcript content is emitted.
  */
 "use strict";
 
 const fs = require("fs");
+const { createHash } = require("node:crypto");
 const os = require("os");
 const path = require("path");
 
@@ -46,22 +48,8 @@ function parseIso(s) {
   return Number.isFinite(t) ? t : null;
 }
 
-function clip(s, n) {
-  const t = String(s || "").replace(/\s+/g, " ").trim();
-  if (t.length <= n) return t;
-  return `${t.slice(0, n)}…`;
-}
-
-function looksSecret(s) {
-  return /-----BEGIN |eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{10,}|postgresql:\/\/[^:]+:[^@]+@/i.test(
-    s,
-  );
-}
-
-function safeClip(s, n) {
-  const t = clip(s, n);
-  if (looksSecret(t)) return "[redacted]";
-  return t;
+function opaqueRef(value) {
+  return createHash("sha256").update(String(value)).digest("hex");
 }
 
 function walkSummaries(root, acc) {
@@ -96,6 +84,26 @@ function extractText(content) {
   return bits.join("\n");
 }
 
+function peekPrefix(chatPath) {
+  let raw = "";
+  let fd;
+  try {
+    fd = fs.openSync(chatPath, "r");
+    const buf = Buffer.alloc(65536);
+    const n = fs.readSync(fd, buf, 0, buf.length, 0);
+    raw = buf.subarray(0, n).toString("utf8");
+    if (n === buf.length) {
+      const cut = raw.lastIndexOf("\n");
+      if (cut >= 0) raw = raw.slice(0, cut);
+    }
+  } catch {
+    return "";
+  } finally {
+    if (fd !== undefined) fs.closeSync(fd);
+  }
+  return lastUserAndAsstFromText(raw).lastUser;
+}
+
 function lastUserAndAsst(chatPath) {
   let lastUser = "";
   let lastAsst = "";
@@ -106,6 +114,12 @@ function lastUserAndAsst(chatPath) {
   } catch {
     return { lastUser, lastAsst };
   }
+  return lastUserAndAsstFromText(raw);
+}
+
+function lastUserAndAsstFromText(raw) {
+  let lastUser = "";
+  let lastAsst = "";
   for (const line of raw.split("\n")) {
     if (!line) continue;
     let obj;
@@ -123,18 +137,6 @@ function lastUserAndAsst(chatPath) {
     else if (role === "assistant" || role === "model") lastAsst = t;
   }
   return { lastUser, lastAsst };
-}
-
-function mentionedPrs(...texts) {
-  const found = new Set();
-  const blob = texts.join("\n");
-  const re =
-    /https:\/\/github\.com\/([A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+)\/pull\/(\d+)/g;
-  let m;
-  while ((m = re.exec(blob))) {
-    found.add(`${m[1]}#${m[2]}`);
-  }
-  return [...found].slice(0, 12);
 }
 
 function collectGrok() {
@@ -173,7 +175,8 @@ function collectGrok() {
       cron,
       lastUser,
       lastAsst,
-      prs: mentionedPrs(lastUser, lastAsst),
+      ref: opaqueRef(file),
+      source: file,
     });
   }
   rows.sort((a, b) => (a.last < b.last ? 1 : -1));
@@ -213,21 +216,21 @@ function collectClaude() {
       if (!SUMMARY) {
         lastUser = lastUserAndAsst(file).lastUser;
       } else {
-        // summary: cheap first-line peek for cron collapse only
-        lastUser = lastUserAndAsst(file).lastUser;
+        lastUser = peekPrefix(file);
       }
       const cron = lastUser.startsWith(CRON_USER_PREFIX);
       rows.push({
         adapter: "claude",
-        sid: name.replace(/\.jsonl$/, ""),
+        sid: name.slice(0, -".jsonl".length),
         cwd: proj.name,
-        title: cron ? "PR-watch cron" : clip(lastUser, 80) || "(no user text)",
+        title: cron ? "PR-watch cron" : "session",
         last: new Date(st.mtimeMs).toISOString(),
         chat: 0,
         cron,
         lastUser,
         lastAsst: "",
-        prs: mentionedPrs(lastUser),
+        ref: opaqueRef(file),
+        source: file,
       });
     }
   }
@@ -275,6 +278,19 @@ function main() {
     ...globTmp("revealui-crash-"),
   ];
 
+  const indexFlag = process.argv.indexOf("--index-file");
+  if (indexFlag >= 0) {
+    const target = process.argv[indexFlag + 1];
+    if (!target || target.startsWith("--")) throw new Error("index file required");
+    const index = [
+      ...all.map(row => ({ ref: row.ref, adapter: row.adapter, sourcePath: row.source })),
+      ...[...recovery, ...snaps, ...crashMarkers].map(file => ({ ref: opaqueRef(file), adapter: "artifact", sourcePath: file })),
+    ];
+    const fd = fs.openSync(target, "wx", 0o600);
+    try { fs.writeFileSync(fd, JSON.stringify(index, null, 2) + "\n"); fs.fsyncSync(fd); }
+    finally { fs.closeSync(fd); }
+  }
+
   if (SUMMARY) {
     const parts = [
       `[recover-inventory] ${HOURS}h: ${unique.length} unique`,
@@ -299,23 +315,23 @@ function main() {
   lines.push(
     "Classify every unique row (done | owner-gated | agent-unfinished | orphan-artifact).",
   );
-  lines.push("Verify every mentioned PR with `gh pr view N -R owner/repo` before trusting a tail.");
+  lines.push("Content omitted by design: titles, paths, prompts, assistant text and extracted links can contain secrets. Session references are SHA-256 of the local source path; resolve locally before deliberately reviewing source content.");
   lines.push("Do not emit \"No recovery needed\" until unique rows are classified and agent-unfinished is empty or in progress.");
   lines.push("");
 
   if (recovery.length) {
     lines.push("## Recovery artifacts (not in git)");
-    for (const p of recovery) lines.push(`- ${p}`);
+    for (const p of recovery) lines.push(`- artifact_ref: ${opaqueRef(p)}`);
     lines.push("");
   }
   if (snaps.length) {
     lines.push("## Active snapshots");
-    for (const p of snaps) lines.push(`- ${p}`);
+    for (const p of snaps) lines.push(`- snapshot_ref: ${opaqueRef(p)}`);
     lines.push("");
   }
   if (crashMarkers.length) {
     lines.push("## Crash / last-state markers");
-    for (const p of crashMarkers) lines.push(`- ${p}`);
+    for (const p of crashMarkers) lines.push(`- marker_ref: ${opaqueRef(p)}`);
     lines.push("");
   }
 
@@ -325,13 +341,9 @@ function main() {
   }
   for (const r of unique) {
     lines.push("");
-    lines.push(`### ${r.adapter} ${r.last.slice(0, 19)}  ${r.title || "(untitled)"}`);
-    lines.push(`- sid: ${r.sid}`);
-    lines.push(`- cwd: ${r.cwd || "?"}`);
+    lines.push(`### ${r.adapter} ${r.last.slice(0, 19)}`);
+    lines.push(`- session_ref: ${r.ref}`);
     if (r.chat) lines.push(`- chat_messages: ${r.chat}`);
-    if (r.lastUser) lines.push(`- last_user: ${safeClip(r.lastUser, 280)}`);
-    if (r.lastAsst) lines.push(`- asst_tail: ${safeClip(r.lastAsst.slice(-220), 220)}`);
-    if (r.prs.length) lines.push(`- prs: ${r.prs.join(", ")}`);
     lines.push("- class: (fill: done | owner-gated | agent-unfinished | orphan-artifact)");
   }
 
@@ -353,6 +365,7 @@ function main() {
 try {
   main();
 } catch (err) {
-  process.stderr.write(`recover-inventory: ${err instanceof Error ? err.message : err}\n`);
+  process.stderr.write("recover-inventory: inventory unavailable (details withheld)\n");
+  process.exitCode = 2;
 }
-process.exit(0);
+process.exit(process.exitCode || 0);

@@ -1,37 +1,37 @@
 ---
 type: master-plan
 repo: revskills
-last-updated: 2026-08-13
+last-updated: 2026-10-09
 owner: RevealUI Studio
 staleness-status: FRESH
 ---
 
 # RevSkills — Master Plan
 
-**Last Updated:** 2026-08-13  
-**Status:** Active — **26** skills shipped under `skills/` (pre-1.0 per skill)  
-**Owner:** RevealUI Studio  
+**Last Updated:** 2026-10-09
+**Status:** Active. See [generated skill inventory](./SKILL_INVENTORY.md) for the current shipped count and pack classification (pre-1.0 per skill)
+**Owner:** RevealUI Studio
 **Repo:** [RevealUIStudio/revskills](https://github.com/RevealUIStudio/revskills)
 
-> Fleet-level plans live in the private coordination hub. This file is RevSkills-scoped only.  
-> **Code-over-docs:** skill count = directories under `skills/` with a `SKILL.md`.
+> Fleet-level plans live in the private coordination hub. This file is RevSkills-scoped only.
+> **Code-over-docs:** `node scripts/generate-skill-inventory.mts --check` validates the count and pack against parsed skill metadata.
 
 ---
 
-## Current reality (2026-08-07)
+## Current reality (2026-10-09)
 
 ### What exists
 
-26 Agent Skills (vendor-agnostic SSOT under `skills/`). Equal adapters: Claude Code, Grok, Cursor, OpenCode, VS Code. Public install: `npx skills add RevealUIStudio/revskills`. Claude `.claude-plugin/` is one marketplace adapter.
+Agent Skills under `skills/` are the SSOT. Compatible adapters include Claude Code, Grok, Cursor, OpenCode, and VS Code; individual skills declare their layout, service, and runtime requirements. Public install: `npx skills add RevealUIStudio/revskills`. Claude `.claude-plugin/` is one marketplace adapter.
 
-Categories (see root `README.md` for the live table):
+The generated categories and asset counts are in `SKILL_INVENTORY.md`. Representative areas:
 
 - Framework & app patterns (Next, Tailwind, security)
 - Data & sync (Drizzle, Electric, Yjs)
 - AI & agents (MCP, multi-agent memory, grok-bot-checkpoint)
 - Testing (Vitest)
-- Audit & architecture (exhaustive-audit, redundancy-scan, knowledge-graph)
-- Design (revealui-design + kits)
+- Audit & architecture (exhaustive-audit, redundancy-scan; fleet knowledge-graph is Studio context)
+- Design (revealui-design; retired kits are pointer pages)
 - Studio-internal workflow skills (checkpoint, snapshot, ops, doctor, recover, …)
 
 ### Residuals
@@ -39,7 +39,7 @@ Categories (see root `README.md` for the live table):
 | Item | Notes |
 |---|---|
 | Public vs Studio layout pack | Documented in README + MASTER_SPEC; Studio ≠ Claude-only |
-| Continuous skill lint | Pre-push: skills-lint multi-home, plugin-lint in-repo `.`, leak-scan |
+| Continuous skill lint | Pre-push: skills-lint multi-home, plugin-lint in-repo `.`, leak-scan, md-truth self-test |
 | Vendor program follow-ups | GAP-470/471/472 train (packaging, workflow matrix, tool map) |
 
 ---
@@ -56,5 +56,6 @@ Categories (see root `README.md` for the live table):
 
 ## See also
 
-- [`../README.md`](../README.md) — install + skill index  
-- [`docs/MASTER_SPEC.md`](./MASTER_SPEC.md) — skill layout contract  
+- [`../README.md`](../README.md) — install + skill index
+- [`docs/MASTER_SPEC.md`](./MASTER_SPEC.md) — skill layout contract
+- [`SKILL_INVENTORY.md`](./SKILL_INVENTORY.md) — generated count, pack, and executable assets

@@ -28,6 +28,13 @@ test_stop_blocks_when_occupancy_above_gate_and_no_snapshot() {
   assert_contains "stop stdout is a block decision" '"decision":"block"' "$out"
   assert_contains "stop reason names occupancy" "occupancy 80%" "$out"
   assert_contains "stop reason names session id" "$sid" "$out"
+  assert_contains "stop reason names the fleet-root skill path" \
+    '$REVEALFLEET_ROOT/revskills/skills/revealui-snapshot/SKILL.md' "$out"
+  if [[ "$out" == *'~/revealfleet'* ]]; then
+    fail "stop reason still points at ~/revealfleet"
+  else
+    pass "stop reason does not point at ~/revealfleet"
+  fi
 }
 
 test_stop_allows_when_occupancy_below_gate() {
@@ -53,6 +60,16 @@ test_stop_allows_when_occupancy_below_gate() {
   fi
 }
 
+_write_complete_agent_snapshot() {
+  local dest="$1" sid="$2" heading
+  {
+    printf '%s\n' '---' "session_id: $sid" "created: $(date -u +%Y-%m-%dT%H:%M:%SZ)" 'origin: agent' '---'
+    for heading in Resume-From-Here What-Shipped Active-Constraints Do-Not-Repeat Open-Loose-Ends; do
+      printf '## %s\nagent authored\n\n' "$heading"
+    done
+  } > "$dest"
+}
+
 test_stop_allows_when_agent_snapshot_exists() {
   local tmp sid sess
   tmp="$(make_sandbox)"
@@ -61,12 +78,7 @@ test_stop_allows_when_agent_snapshot_exists() {
   mkdir -p "$sess/$sid" "$tmp/coord/snapshots"
   printf '%s\n' '{"contextTokensUsed":400000,"contextWindowTokens":500000,"contextWindowUsage":80}' \
     >"$sess/$sid/signals.json"
-  printf '%s\n' "---
-session_id: $sid
-origin: agent
----
-# Snapshot — real
-" >"$tmp/coord/snapshots/$sid.md"
+  _write_complete_agent_snapshot "$tmp/coord/snapshots/$sid.md" "$sid"
   local out
   out="$(
     _sbc stop "{\"hookEventName\":\"Stop\",\"sessionId\":\"$sid\",\"reason\":\"end_turn\"}" \
@@ -165,13 +177,7 @@ test_precompact_does_not_overwrite_agent_snapshot() {
   sid="sbc-pre-keep"
   dest="$tmp/coord/snapshots/$sid.md"
   mkdir -p "$tmp/coord/snapshots"
-  printf '%s\n' "---
-session_id: $sid
----
-# Snapshot — keep me
-## Resume-From-Here
-agent authored
-" >"$dest"
+  _write_complete_agent_snapshot "$dest" "$sid"
   _sbc precompact "{\"hookEventName\":\"PreCompact\",\"sessionId\":\"$sid\",\"trigger\":\"auto\"}" \
     HOME="$tmp" GROK_HOME="$tmp/grok" REVEALUI_COORD_ROOT="$tmp/coord" >/dev/null
   local body

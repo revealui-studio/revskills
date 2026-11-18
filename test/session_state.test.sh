@@ -190,6 +190,18 @@ test_ss_session_id_empty_without_env() {
   unset REVEALUI_COORD_ROOT GROK_ACTIVE_SESSIONS
 }
 
+test_ss_identity_ignores_global_tmp_cache() {
+  _ss_load
+  _ss_clear_session_env
+  local planted
+  planted="$(mktemp /tmp/revealui-session-zz.XXXXXX.id)"
+  printf '%s\n' '$(echo PWNED)' >"$planted"
+  touch -d '2026-10-09 00:00:00' "$planted" 2>/dev/null || true
+  assert_eq "stagehand" "$(ss_identity)" "global /tmp cache cannot identify this session"
+  rm -f "$planted"
+  _ss_clear_session_env
+}
+
 test_ss_identity_prefers_neutral() {
   _ss_load
   _ss_clear_session_env
@@ -233,6 +245,128 @@ test_ss_snapshot_legacy_read_through() {
   unset REVEALUI_COORD_ROOT REVEALUI_COORD_LEGACY_CLAUDE
 }
 
+test_ss_snapshot_symlinks_are_rejected() {
+  _ss_load
+  _ss_clear_session_env
+  local tmp root
+  tmp="$(make_sandbox)"
+  root="$tmp/coord"
+  export REVEALUI_COORD_ROOT="$root"
+  mkdir -p "$root/snapshots"
+  printf '%s\n' 'foreign' >"$tmp/foreign.md"
+  ln -s "$tmp/foreign.md" "$root/snapshots/linked.md"
+  assert_exit "snapshot read refuses file symlink" 1 -- ss_snapshot_path linked
+  assert_exit "snapshot write refuses file symlink" 1 -- ss_snapshot_write_path linked
+  assert_exit "atomic writer refuses file symlink" 1 -- \
+    node "$REPO_ROOT/scripts/lib/snapshot-files.mts" path-write "$root" linked
+  assert_eq 'foreign' "$(cat "$tmp/foreign.md")" "symlink target remains unchanged"
+  rm "$root/snapshots/linked.md"
+  mv "$root/snapshots" "$root/snapshots-real"
+  ln -s "$root/snapshots-real" "$root/snapshots"
+  assert_exit "snapshot directory symlink refused" 1 -- ss_snapshot_write_path linked
+  rm "$root/snapshots"
+  mkdir -p "$tmp/foreign-parent"
+  ln -s "$tmp/foreign-parent" "$tmp/linked-parent"
+  export REVEALUI_COORD_ROOT="$tmp/linked-parent/coord"
+  assert_exit "ancestor symlink refused before directory creation" 1 -- ss_snapshot_write_path linked
+  assert_exit "ancestor symlink leaves foreign tree untouched" 1 -- test -e "$tmp/foreign-parent/coord"
+  _ss_clear_session_env
+  unset REVEALUI_COORD_ROOT
+}
+
+test_ss_snapshot_atomic_private_write() {
+  _ss_load
+  local tmp file mode
+  tmp="$(make_sandbox)"
+  export REVEALUI_COORD_ROOT="$tmp/coord"
+  file="$(printf '## Resume-From-Here\nnext\n' | node "$REPO_ROOT/scripts/lib/snapshot-files.mts" atomic-write "$REVEALUI_COORD_ROOT" private-sid)"
+  assert_eq "$tmp/coord/snapshots/private-sid.md" "$file" "atomic writer returns id-bound path"
+  assert_eq '## Resume-From-Here' "$(head -1 "$file")" "atomic writer preserves content"
+  mode="$(stat -c '%a' "$file")"
+  assert_eq 600 "$mode" "snapshot is owner-only readable"
+  assert_eq 700 "$(stat -c '%a' "$tmp/coord/snapshots")" "snapshot directory is owner-only"
+  assert_eq 700 "$(stat -c '%a' "$tmp/coord")" "coordination root is owner-only"
+  unset REVEALUI_COORD_ROOT
+}
+
+test_ss_archive_preserves_precompaction_draft() {
+  local tmp
+  tmp="$(make_sandbox)"
+  assert_exit "archive preserves exact draft bytes before replacement" 0 -- \
+    node - "$REPO_ROOT/scripts/lib/snapshot-files.mts" "$tmp/coord" <<'JS'
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const { archiveSnapshot, atomicPrivateWrite, safeSnapshotPath } = require(process.argv[2]);
+const root = process.argv[3];
+const sid = 'draft-sid';
+assert.equal(archiveSnapshot(root, sid), null);
+const file = safeSnapshotPath(root, sid, { create: true });
+const draft = Buffer.from([0, 65, 10, 66, 255]);
+fs.writeFileSync(file, draft);
+const archive = archiveSnapshot(root, sid);
+assert.ok(archive);
+assert.deepEqual(fs.readFileSync(archive), draft);
+assert.equal(fs.statSync(archive).mode & 0o777, 0o600);
+assert.equal(fs.statSync(require('node:path').dirname(archive)).mode & 0o777, 0o700);
+atomicPrivateWrite(root, sid, 'replacement');
+assert.deepEqual(fs.readFileSync(archive), draft);
+assert.equal(fs.readFileSync(file, 'utf8'), 'replacement');
+JS
+}
+
+test_ss_stale_pid_stamp_is_rejected() {
+  _ss_load
+  _ss_clear_session_env
+  local tmp
+  tmp="$(make_sandbox)"
+  export REVEALUI_COORD_ROOT="$tmp/coord"
+  mkdir -p "$tmp/coord/harness-sessions/by-pid"
+  printf '%s\n' '{"sid":"stale","identity":"other","start":"0","command":"bash"}' \
+    >"$tmp/coord/harness-sessions/by-pid/$$"
+  assert_exit "PID-reused stamp cannot resolve session" 1 -- ss_session_id
+  assert_eq stagehand "$(ss_identity)" "PID-reused stamp cannot resolve identity"
+  _ss_clear_session_env
+  unset REVEALUI_COORD_ROOT
+}
+
+test_ss_stamp_rejects_symlink_ancestor_without_creation() {
+  _ss_load
+  local tmp
+  tmp="$(make_sandbox)"
+  mkdir -p "$tmp/outside"
+  ln -s "$tmp/outside" "$tmp/linked"
+  assert_exit "stamp directory helper rejects symlink ancestor" 1 -- \
+    node "$REPO_ROOT/scripts/lib/snapshot-files.mts" stamp-dir "$tmp/linked/coord"
+  env REVEALUI_COORD_ROOT="$tmp/linked/coord" AGENT_SESSION_ID=valid-sid \
+    REVEALUI_SESSION_OWNER_PID="$$" bash "$REPO_ROOT/scripts/stamp-session-id.sh"
+  assert_exit "stamp hook creates nothing through symlink ancestor" 1 -- \
+    test -e "$tmp/outside/coord"
+}
+
+test_ss_shared_harness_stamp_becomes_ambiguous() {
+  local tmp result
+  tmp="$(make_sandbox)"
+  result="$(python3 - "$REPO_ROOT" "$tmp/coord" <<'PY'
+import ctypes, os, subprocess, sys
+
+libc = ctypes.CDLL(None)
+if libc.prctl(15, b"codex", 0, 0, 0) != 0:
+    raise SystemExit("could not name synthetic harness process")
+repo, coord = sys.argv[1:]
+env = dict(os.environ)
+env.update({"REVEALUI_COORD_ROOT": coord, "REVEALUI_SESSION_OWNER_PID": str(os.getpid())})
+for sid in ("first-session", "second-session"):
+    env["AGENT_SESSION_ID"] = sid
+    subprocess.run(["bash", repo + "/scripts/stamp-session-id.sh"], env=env, check=True)
+env.pop("AGENT_SESSION_ID", None)
+result = subprocess.run(["bash", "-c", '. "$1"; ss_session_id', "_", repo + "/scripts/lib/session-state.sh"],
+                        env=env, capture_output=True, text=True)
+print("blocked" if result.returncode != 0 else result.stdout.strip())
+PY
+)"
+  assert_eq blocked "$result" "two sessions sharing a harness process fail closed"
+}
+
 test_ss_live_harness_peers_is_numeric() {
   _ss_load
   local n
@@ -261,22 +395,38 @@ test_ss_coord_paths() {
   unset REVEALUI_COORD_ROOT
 }
 
-test_ss_session_id_from_pid_stamps() {
+test_ss_session_id_from_process_bound_stamp() {
   _ss_load
   _ss_clear_session_env
-  unset GROK_SESSION_ID
-  local tmp
+  local tmp result
   tmp="$(make_sandbox)"
   export REVEALUI_COORD_ROOT="$tmp/coord"
   ss_ensure_coord_dirs
-  # Stamp current shell pid — ss_session_id walks ancestors including $$
-  printf '%s\n' "stamp-sid-99" >"$tmp/coord/harness-sessions/by-pid/$$"
-  assert_eq "stamp-sid-99" "$(ss_session_id)" "pid stamp auto-resolves without env"
+  result="$(python3 - "$REPO_ROOT" "$tmp/coord" <<'PY'
+import ctypes, os, subprocess, sys
+
+libc = ctypes.CDLL(None)
+if libc.prctl(15, b"codex", 0, 0, 0) != 0:
+    raise SystemExit("could not name synthetic harness process")
+repo, coord = sys.argv[1:]
+env = dict(os.environ)
+env.update({"REVEALUI_COORD_ROOT": coord, "REVEALUI_SESSION_OWNER_PID": str(os.getpid()),
+            "AGENT_SESSION_ID": "stamp-sid-99", "REVEALUI_IDENTITY": "own-agent"})
+subprocess.run(["bash", repo + "/scripts/stamp-session-id.sh"], env=env, check=True)
+env.pop("AGENT_SESSION_ID", None)
+env.pop("REVEALUI_IDENTITY", None)
+script = '. "$1"; ss_session_id; ss_identity'
+result = subprocess.run(["bash", "-c", script, "_", repo + "/scripts/lib/session-state.sh"],
+                        env=env, check=True, capture_output=True, text=True)
+print(result.stdout, end="")
+PY
+)"
+  assert_eq $'stamp-sid-99\nown-agent' "$result" "one harness-bound stamp resolves its session and identity"
   _ss_clear_session_env
   unset REVEALUI_COORD_ROOT
 }
 
-test_ss_session_id_from_grok_active_fixture() {
+test_ss_pid_only_grok_registry_is_not_identity() {
   _ss_load
   _ss_clear_session_env
   unset GROK_SESSION_ID
@@ -287,7 +437,7 @@ test_ss_session_id_from_grok_active_fixture() {
   fixture="$tmp/active_sessions.json"
   printf '%s\n' "[{\"session_id\":\"from-active-json\",\"pid\":$$,\"cwd\":\"$PWD\",\"opened_at\":\"2026-08-07T00:00:00Z\"}]" >"$fixture"
   export GROK_ACTIVE_SESSIONS="$fixture"
-  assert_eq "from-active-json" "$(ss_session_id)" "Grok active_sessions pid match"
+  assert_exit "PID-only registry cannot establish session identity" 1 -- ss_session_id
   unset GROK_ACTIVE_SESSIONS REVEALUI_COORD_ROOT
   _ss_clear_session_env
 }
@@ -375,6 +525,51 @@ MD
   esac
   unset DAEMON_SOCKET REVEALUI_SOCKET AGENT_SESSION_ID
   _ss_clear_session_env
+}
+
+test_ss_rpc_preserves_supplied_and_default_params() {
+  _ss_load
+  local tmp socket capture server result tries
+  tmp="$(make_sandbox)"
+  socket="$tmp/harness.sock"
+  capture="$tmp/requests.jsonl"
+  python3 - "$socket" "$capture" <<'PY' &
+import json, socket, sys
+
+sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+sock.bind(sys.argv[1])
+sock.listen(4)
+with open(sys.argv[2], "w", encoding="utf-8") as output:
+    for _ in range(4):
+        conn, _ = sock.accept()
+        with conn:
+            data = b""
+            while b"\n" not in data:
+                data += conn.recv(65536)
+            request = json.loads(data.split(b"\n", 1)[0])
+            output.write(json.dumps(request) + "\n")
+            output.flush()
+            conn.sendall((json.dumps({"jsonrpc":"2.0","id":1,"result":request["params"]}) + "\n").encode())
+sock.close()
+PY
+  server=$!
+  tries=0
+  while [ ! -S "$socket" ] && [ "$tries" -lt 50 ]; do
+    sleep 0.02
+    tries=$((tries + 1))
+  done
+  export DAEMON_SOCKET="$socket"
+  result="$(ss_daemon_rpc session.register '{"agentId":"one"}')"
+  assert_eq '{"agentId":"one"}' "$result" "register retains supplied JSON object"
+  result="$(ss_daemon_rpc session.snapshot.write '{"sessionId":"sid","sections":{"resumeFromHere":"next"}}')"
+  assert_eq '{"sessionId":"sid","sections":{"resumeFromHere":"next"}}' "$result" "write retains nested JSON object"
+  result="$(ss_daemon_rpc session.snapshot.get '{"sessionId":"sid"}')"
+  assert_eq '{"sessionId":"sid"}' "$result" "get retains supplied JSON object"
+  result="$(ss_daemon_rpc session.ping)"
+  assert_eq '{}' "$result" "omitted params default to object"
+  wait "$server"
+  assert_eq 4 "$(wc -l <"$capture")" "fake daemon received all four valid requests"
+  unset DAEMON_SOCKET
 }
 
 test_ss_daemon_snapshot_write_skips_without_file() {

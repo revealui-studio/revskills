@@ -5,12 +5,13 @@
  * Modes:
  *   --self-test     Verify W1/W4/W5 scripts exist + coverage-status accepts C3
  *                   statuses. Always safe for CI (no archive required).
- *   --coverage      Require REVEALFLEET_ARCHIVE/audits/<run> (or --run) and fail
- *                   unless coverage-status exits 0 on fleet+homes manifests.
+ *   --coverage      Require REVEALFLEET_ARCHIVE or REVEALFLEET_ROOT (or --run)
+ *                   and fail unless coverage-status exits 0 on fleet+homes
+ *                   manifests. Never falls back to $HOME/revealfleet.
  *
  * Usage:
  *   node md-truth-check.js --self-test
- *   node md-truth-check.js --coverage [--run 2026-07-22-md-truth]
+ *   node md-truth-check.js --coverage [--run 2026-07-22-md-truth] [--components fleet,claude,grok]
  */
 "use strict";
 
@@ -21,11 +22,12 @@ const { spawnSync } = require("child_process");
 const HERE = path.dirname(__filename);
 
 function parseArgs(argv) {
-  const out = { selfTest: false, coverage: false, run: "2026-07-22-md-truth" };
+  const out = { selfTest: false, coverage: false, components: "fleet,claude,grok", run: "2026-07-22-md-truth" };
   for (let i = 2; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--self-test") out.selfTest = true;
     else if (a === "--coverage") out.coverage = true;
+    else if (a === "--components") out.components = argv[++i];
     else if (a === "--run") out.run = argv[++i];
     else if (a === "--help" || a === "-h") out.help = true;
   }
@@ -56,7 +58,7 @@ function selfTest() {
 
   // classifier smoke: dry-run path rules without archive
   const w1 = fs.readFileSync(path.join(HERE, "w1-auto-class-md.js"), "utf8");
-  if (!w1.includes("classifyByPath") || !w1.includes("historical-ok")) {
+  if (!w1.includes("classifyByPath") || !w1.includes("historical-ok") || !w1.includes("runCandidates")) {
     throw new Error("w1-auto-class-md.js missing classifier");
   }
   const w4 = fs.readFileSync(path.join(HERE, "w4-jv-present-md.js"), "utf8");
@@ -67,28 +69,49 @@ function selfTest() {
   process.stdout.write("md-truth-check --self-test: OK\n");
 }
 
-function coverageCheck(runId) {
-  const archive =
-    process.env.REVEALFLEET_ARCHIVE || path.join(process.env.HOME || "", "revealfleet/archive/cold");
-  const runDir = path.join(archive, "audits", runId);
+function archiveRoot() {
+  if (process.env.REVEALFLEET_ARCHIVE) return process.env.REVEALFLEET_ARCHIVE;
+  if (process.env.REVEALFLEET_ROOT) return path.join(process.env.REVEALFLEET_ROOT, "archive", "cold");
+  throw new Error(
+    "md-truth-check --coverage: set REVEALFLEET_ARCHIVE or REVEALFLEET_ROOT. Never default to $HOME/revealfleet.",
+  );
+}
+
+function coverageCheck(runId, componentList) {
+  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,120}$/.test(String(runId || ""))) {
+    throw new Error("md-truth-check --coverage: --run must be a single path segment");
+  }
+  const audits = path.resolve(archiveRoot(), "audits");
+  const runDir = path.resolve(audits, runId);
+  const rel = path.relative(audits, runDir);
+  if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) {
+    throw new Error("md-truth-check --coverage: run directory escapes the archive");
+  }
   if (!fs.existsSync(runDir)) {
     throw new Error(
-      `coverage run not found: ${runDir} (set REVEALFLEET_ARCHIVE or skip --coverage in CI without archive)`,
+      `coverage run not found: ${runDir} (set REVEALFLEET_ARCHIVE or REVEALFLEET_ROOT, or skip --coverage in CI without archive)`,
     );
   }
-  const main = path.join(runDir, "manifest.jsonl");
-  const claude = path.join(runDir, "manifest-claude-home-md.jsonl");
-  const grok = path.join(runDir, "manifest-grok-home-md.jsonl");
-  const ledger = path.join(runDir, "ledger", "coverage.jsonl");
-  for (const f of [main, ledger]) {
-    if (!fs.existsSync(f)) throw new Error(`missing ${f}`);
+  const names = new Map([
+    ["fleet", "manifest.jsonl"], ["claude", "manifest-claude-home-md.jsonl"], ["grok", "manifest-grok-home-md.jsonl"],
+  ]);
+  const components = String(componentList || "").split(",");
+  if (!components.length || !components.every((name) => names.has(name)) || new Set(components).size !== components.length) {
+    throw new Error("--components must explicitly name fleet,claude,grok (or a nonempty subset)");
   }
-
+  const { loadManifest } = require("./lib/integrity");
+  const records = [], paths = new Set();
+  for (const component of components) {
+    const file = path.join(runDir, names.get(component));
+    for (const row of loadManifest(file)) {
+      if (paths.has(row.path)) throw new Error(`Duplicate component path: ${row.path}`);
+      paths.add(row.path);
+      records.push(row);
+    }
+  }
+  const ledger = path.join(runDir, "ledger", "coverage.jsonl");
   const combined = path.join(runDir, "manifest-fleet-plus-homes.jsonl");
-  const parts = [fs.readFileSync(main, "utf8").trim()];
-  if (fs.existsSync(claude)) parts.push(fs.readFileSync(claude, "utf8").trim());
-  if (fs.existsSync(grok)) parts.push(fs.readFileSync(grok, "utf8").trim());
-  fs.writeFileSync(combined, parts.filter(Boolean).join("\n") + "\n");
+  fs.writeFileSync(combined, records.map((row) => JSON.stringify(row)).join("\n") + "\n");
 
   const r = spawnSync(
     process.execPath,
@@ -115,13 +138,13 @@ function main() {
   const args = parseArgs(process.argv);
   if (args.help || (!args.selfTest && !args.coverage)) {
     process.stderr.write(
-      "Usage: node md-truth-check.js --self-test | --coverage [--run 2026-07-22-md-truth]\n",
+      "Usage: node md-truth-check.js --self-test | --coverage [--run 2026-07-22-md-truth] [--components fleet,claude,grok]\n",
     );
     process.exit(args.help ? 0 : 1);
   }
   try {
     if (args.selfTest) selfTest();
-    if (args.coverage) coverageCheck(args.run);
+    if (args.coverage) coverageCheck(args.run, args.components);
   } catch (e) {
     process.stderr.write(String(e && e.message ? e.message : e) + "\n");
     process.exit(1);

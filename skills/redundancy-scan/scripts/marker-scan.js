@@ -11,7 +11,7 @@
 
 const fs = require("fs");
 const path = require("path");
-const { parseArgs, loadConfig, walkFiles, writeJsonl } = require("./lib.js");
+const { parseArgs, loadConfig, walkScope, findingId, writeJsonl } = require("./lib.js");
 
 function findLines(text, needles) {
   const hits = [];
@@ -40,9 +40,6 @@ function main() {
   }
 
   const cfg = loadConfig(args.config);
-  const excludeSet = new Set(cfg.excludeDirNames || []);
-  const textExtSet = new Set(cfg.textExtensions || []);
-  const maxBytes = cfg.maxFileBytes || 1_500_000;
   const rootAbs = path.resolve(args.root);
   const prefix = args.prefix || "";
 
@@ -50,23 +47,21 @@ function main() {
   const redNeedles = mode === "deprecation" ? [] : cfg.redundancySubstrings || [];
 
   const findings = [];
-  let n = 0;
 
-  walkFiles(rootAbs, "", excludeSet, textExtSet, maxBytes, ({ abs, rel }) => {
+  walkScope(args, cfg, ({ abs, rel }) => {
     let text;
     try {
       text = fs.readFileSync(abs, "utf8");
-    } catch {
-      return;
+    } catch (error) {
+      throw new Error(`Cannot read ${abs}: ${error.message}`);
     }
     if (text.includes("\u0000")) return;
 
     if (depNeedles.length) {
       const hits = findLines(text, depNeedles);
       for (const h of hits) {
-        n++;
         findings.push({
-          id: `DEP-${String(n).padStart(5, "0")}`,
+          id: findingId("DEP", [prefix + rel, h.line, h.needle]),
           class: "deprecation-marker",
           severity: "low",
           title: `Deprecation marker: ${h.needle}`,
@@ -84,9 +79,8 @@ function main() {
     if (redNeedles.length) {
       const hits = findLines(text, redNeedles);
       for (const h of hits) {
-        n++;
         findings.push({
-          id: `RED-${String(n).padStart(5, "0")}`,
+          id: findingId("RED", [prefix + rel, h.line, h.needle]),
           class: "redundancy-marker",
           severity: "info",
           title: `Redundancy/lockstep marker: ${h.needle}`,

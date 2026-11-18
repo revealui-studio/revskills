@@ -9,16 +9,14 @@ description: >
   verification, multi-agent audit, fleet-wide audit, "account for every file/line",
   or a brutally honest per-repo product assessment (Phase 0).
 license: MIT
-allowed-tools: Bash, Read, Grep, Glob, Write, Edit
+compatibility: Agent Skills host with Node.js 24+ and local filesystem access for CLI helpers. Fleet mode requires a RevealFleet directory layout.
+allowed-tools: Bash Read Grep Glob Write Edit
 metadata:
+  pack: public
   author: RevealUI Studio
-  version: "0.2.1"
+  version: "0.2.3"
   website: https://revealui.com
-  related:
-    - knowledge-graph
-    - multi-agent-memory
-    - revealui-checkpoint
-    - security-hardening
+  related: "knowledge-graph multi-agent-memory revealui-checkpoint security-hardening"
 ---
 
 # Exhaustive audit framework
@@ -28,7 +26,7 @@ metadata:
 A monorepo cannot fit every line into one model context. Completeness is **machine-checked**:
 
 1. **Inventory** — every on-disk path under scope is listed (hash, bytes, line count).
-2. **Coverage ledger** — every path reaches a terminal status (`verified` | `finding` | `waived` | `blocked`).
+2. **Coverage ledger** — every path reaches a terminal status (`verified` | `finding` | `waived` with required evidence; `blocked` remains incomplete).
 3. **Line accountability** — for each file, the auditor records that the full content was read (or a mechanical verifier covered it), with start/end line counts matching the manifest.
 4. **No silent skip** — uncovered paths at close are a **failed audit**, not a soft miss.
 
@@ -54,6 +52,7 @@ Pick one run root (prefer an operator-private audits directory):
 <run-root>/
   AUDIT-RUN.yml              # run metadata + scope + status
   manifest.jsonl             # one JSON object per path (machine)
+  source/sha256/             # exact content snapshots for manifest hashes
   shards.json                # partition plan
   claims/                    # per-shard claim files
   ledger/
@@ -100,7 +99,7 @@ node "$SKILL/scripts/coverage-status.js" \
   --mode code
 ```
 
-Fleet `--fleet` walks only `DEFAULT_FLEET_REPOS` in `scripts/lib/fleet-scope.js`. It skips `archive/`, `tmp/`, `scripts/`, hidden dirs except `.jv`, and worktree-style names. Cold archive is opt-in: `--include-archive`. Override the allowlist with `--repos a,b`.
+Fleet `--fleet` walks only `DEFAULT_FLEET_REPOS` in `scripts/lib/fleet-scope.js`, including `revmind` and fleet-root `docs/`. It skips `archive/`, `tmp/`, `scripts/`, hidden dirs except `.jv`, and worktree-style names. Cold archive is opt-in: `--include-archive`. All declared components must exist as directories; missing default or explicit components fail inventory. Override the scope with `--repos a,b` to select a deliberate subset. `--mode md-truth` inventories `*.md` and `*.mdx` only.
 
 ## Multi-session protocol
 
@@ -148,6 +147,9 @@ For each path in the shard (from `shards.json` / claim file):
 
 1. `Read` the **entire** file (paginate with offset/limit if large; cover all lines).
 2. Verify `line_count` matches manifest (or re-count and record drift as finding).
+   If the worktree has changed, read the manifest row's `snapshot` path from the
+   run root and verify its SHA-256 before crediting the pinned content. New runs
+   opened with `open-run.js` retain these snapshots with private file permissions.
 3. Classify findings (see taxonomy below).
 4. Append coverage record:
 
@@ -157,13 +159,39 @@ For each path in the shard (from `shards.json` / claim file):
   "status": "verified",
   "lines_read": [1, 240],
   "manifest_lines": 240,
-  "sha256": "<from manifest or recompute>",
+  "read_sha256": "<SHA-256 recomputed from the pinned bytes actually read>",
   "agent": "grok-audit-3",
   "session": "…",
   "ts": "2026-07-22T18:00:00Z",
   "notes": ""
 }
 ```
+
+Coverage validates the readable inventory, every pinned snapshot digest and every
+receipt's `read_sha256` by default. `--check-hash` remains a compatibility alias;
+there is no unhashed completion mode. Copying a manifest digest into a receipt
+is not read provenance. The gate checks declarations and bytes; it cannot prove
+that an auditor understood the content.
+
+Every completed text receipt requires integer `lines_read` exactly
+`[1, manifest.lines]`, or `[0, 0]` for empty files, plus matching
+`manifest_lines`, `read_sha256` and a nonempty `agent`. Binary files use
+`manifest_lines: null` and require a nonempty `review_method` explaining their
+inspection. Missing manifests, duplicate paths, corrupt snapshots and incomplete
+inventory records fail. An intentionally empty scope requires `--allow-empty`.
+
+`finding` references must resolve to this path in the findings ledger (default:
+`findings.jsonl` beside the coverage ledger; override with `--findings`). A waiver
+requires `waiver: {"owner": "…", "reason": "…"}`. Generated dispositions require
+`--generated-allowlist <JSON file>` containing exact relative paths and a
+`generated_evidence` receipt. Markdown truth dispositions additionally require
+`review_evidence`. Blocked paths remain accounted but cannot close an exhaustive
+read audit. A full receipt is still required for generated/waived content.
+
+**Migration:** legacy receipts without `read_sha256` or snapshots are incomplete.
+Open a new pinned run if snapshots are absent; read the pinned bytes and append
+new receipts. Do not rename copied hashes or relabel automatic classifier output
+as human/agent verification.
 
 Statuses:
 
@@ -172,8 +200,8 @@ Statuses:
 | `verified` | Full read; no open issue for this path |
 | `finding` | Full read; one or more findings linked |
 | `waived` | Full read; issues accepted with reason + owner |
-| `blocked` | Cannot read (secrets binary, permission); reason required |
-| `skipped-generated` | Only if path matches generated allowlist AND content spot-checked |
+| `blocked` | Cannot read; `reason` required; prevents exhaustive closeout |
+| `skipped-generated` | Exact allowlist plus verifier evidence and complete read receipt |
 
 **Forbidden:** `skipped` without allowlist; partial reads marked verified.
 
@@ -306,6 +334,24 @@ Phase 0 may finish in one session. Calling it exhaustive is a contract violation
 | Security shards | Prefer security-aware model; mark `severity` carefully |
 | Final synthesis | Senior pass over findings.jsonl only (not re-read whole tree) |
 
+When the active harness can select a model for each subagent, route by task
+class instead of using one model for every shard. For the current Codex model
+family, use Luna for bounded mechanical inventory, receipt consolidation, and
+CI status collection; Sol for disjoint source-reading shards and low-ambiguity
+owning fixes after the design is settled; Astra for ambiguous security design,
+cross-repository synthesis, and independent review of sensitive changes. Keep
+the independent reviewer on a separate agent/session from the author. If a
+task finds an unexpected trust boundary, concurrency invariant, or design
+choice, stop the low-cost assignment and escalate that task to Astra. Model
+selection never changes the coverage, evidence, or review bar.
+
+The coordinator must pass the selected model explicitly when spawning an agent
+and record the requested model, task class, and actual agent/model identity in
+the shard report. If the harness cannot pin or report a model, say so in the
+receipt and keep the same review requirements; do not claim automatic model
+routing occurred. These names are a Codex routing profile, not fleet-wide
+provider requirements.
+
 ## Related skills
 
 - `knowledge-graph` — map/relate after inventory  
@@ -338,11 +384,19 @@ Phase 0 may finish in one session. Calling it exhaustive is a contract violation
 
 ## MD-truth program (GAP-407)
 
+W1/W4/W5 emit `review-required` candidates from pinned bytes. Suggested statuses
+are routing hints, never verification or L4 evidence. A reviewer must read and
+cross-check the source before appending a terminal receipt. The MD truth gate
+requires fleet, Claude-home and Grok-home manifests by default; explicitly pass
+`--components fleet` (or another nonempty subset of `fleet,claude,grok`) when the
+run intentionally excludes a component. Missing expected components fail.
+
+
 | Script | Wave |
 |--------|------|
-| `scripts/w1-auto-class-md.js` | W1 historical/generated |
-| `scripts/w4-jv-present-md.js` | W4 .jv residual |
-| `scripts/w5-homes-md.js` | W5 claude/grok homes |
+| `scripts/w1-auto-class-md.js` | W1 historical/generated candidates |
+| `scripts/w4-jv-present-md.js` | W4 .jv review candidates |
+| `scripts/w5-homes-md.js` | W5 home review candidates |
 | `scripts/md-truth-check.js` | W6 gate (`--self-test` CI-safe; `--coverage` needs archive) |
 | `scripts/coverage-status.js` | complete bar (exit 0) |
 

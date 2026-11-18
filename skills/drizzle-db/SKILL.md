@@ -2,10 +2,12 @@
 name: drizzle-db
 description: Drizzle ORM schema design, migrations, and query patterns for PostgreSQL. Use when creating tables, writing queries, defining relations, managing migrations, or working with NeonDB. Covers pgTable, indexes, enums, jsonb columns, transactions, soft delete, pagination, drizzle-kit generate/migrate, and serverless connection patterns.
 license: MIT
-allowed-tools: Read, Grep, Glob
+compatibility: Any Agent Skills host; examples require the framework packages named in this skill.
+allowed-tools: Read Grep Glob
 metadata:
+  pack: public
   author: RevealUI Studio
-  version: "0.1.1"
+  version: "0.1.2"
   website: https://revealui.com
 ---
 
@@ -14,7 +16,7 @@ metadata:
 ## Schema Definition
 
 ```typescript
-import { pgTable, text, timestamp, integer, boolean, jsonb, uuid, index } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, jsonb, uuid } from 'drizzle-orm/pg-core';
 
 export const users = pgTable('users', {
   id: uuid('id').defaultRandom().primaryKey(),
@@ -24,9 +26,10 @@ export const users = pgTable('users', {
   metadata: jsonb('metadata').$type<UserMetadata>(),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
-}, (table) => [
-  index('users_email_idx').on(table.email),
-]);
+});
+
+// .unique() creates the supporting PostgreSQL index; do not add a second
+// index on email unless a different access pattern calls for one.
 ```
 
 ## Relations

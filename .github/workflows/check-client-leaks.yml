@@ -1,12 +1,17 @@
 name: Client Name Leak Scan
 
-# Thin caller — shared composite action. Job name preserved for rulesets.
-
+# Trusted workflow revision only. A candidate checkout is scanned as data; none of its
+# scripts, dependencies, hooks, or workflow actions execute in this job.
 on:
   push:
     branches: [test, main]
-  pull_request:
+  pull_request_target:
     branches: [test, main]
+    types: [opened, synchronize, reopened, edited]
+  issues:
+    types: [opened, edited]
+  issue_comment:
+    types: [created, edited]
 
 permissions:
   contents: read
@@ -15,6 +20,34 @@ jobs:
   scan:
     name: Client / prospect name leak scan
     runs-on: ubuntu-latest
-    timeout-minutes: 3
+    timeout-minutes: 5
     steps:
-      - uses: RevealUIStudio/.github/.github/actions/check-client-leaks@8ea1ca5697dfc1f2041aac1368a9dd6d241121ab
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          # Keep helpers aligned with this trusted workflow, even when the PR
+          # target branch predates them. Never execute the candidate revision.
+          ref: ${{ github.workflow_sha }}
+          path: trusted
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '24.13.1'
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+        with:
+          repository: ${{ github.event.pull_request.head.repo.full_name || github.repository }}
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          path: candidate
+          persist-credentials: false
+          submodules: false
+          lfs: false
+      - name: Prepare private rules for trusted scanner
+        env:
+          CLIENT_LEAK_RULES_JSON: ${{ secrets.CLIENT_LEAK_RULES_JSON }}
+        run: node trusted/scripts/provision-client-rules.mts "$RUNNER_TEMP/client-rules.json"
+      - name: Scan candidate files and event content as data
+        run: |
+          node trusted/scripts/scan-event-content.mts "$RUNNER_TEMP/event-content.txt"
+          node trusted/scripts/check-client-leaks.mts --rules "$RUNNER_TEMP/client-rules.json" candidate "$RUNNER_TEMP/event-content.txt"
+      - name: Remove private scan inputs
+        if: always()
+        run: rm -f -- "$RUNNER_TEMP/client-rules.json" "$RUNNER_TEMP/event-content.txt"

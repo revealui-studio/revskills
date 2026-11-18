@@ -1,3 +1,4 @@
+<!-- generated from .revealui/content/rules/no-em-dashes.md -->
 # No Em Dashes in Copy
 
 **Status:** convention. Applies to all customer-facing or public-facing text.

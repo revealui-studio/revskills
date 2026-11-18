@@ -12,6 +12,8 @@
  *   node manifest-build.js --root ~/revealfleet --fleet --exclude-defaults --out /path/manifest.jsonl
  *   node manifest-build.js --root ~/revealfleet --fleet --include-archive --out /path/manifest.jsonl
  *   node manifest-build.js --root . --exclude-defaults --exclude '.pgdata/**'
+ *   node manifest-build.js --root ~/revealfleet --fleet --ext .md,.mdx --out /path/manifest.jsonl
+ *   node manifest-build.js --root ~/revealfleet --out /path/manifest.jsonl --snapshot-dir /path/source/sha256
  */
 "use strict";
 
@@ -22,6 +24,7 @@ const {
   resolveFleetAllowlist,
   shouldWalkFleetChild,
 } = require("./lib/fleet-scope");
+const { countLines } = require("./lib/text-lines");
 
 const DEFAULT_EXCLUDES = [
   "node_modules",
@@ -53,11 +56,14 @@ function parseArgs(argv) {
     fleet: false,
     includeArchive: false,
     repos: [],
+    ext: [],
+    snapshotDir: null,
   };
   for (let i = 2; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--root") out.root = argv[++i];
     else if (a === "--out") out.out = argv[++i];
+    else if (a === "--snapshot-dir") out.snapshotDir = argv[++i];
     else if (a === "--exclude-defaults") out.excludeDefaults = true;
     else if (a === "--exclude") out.exclude.push(argv[++i]);
     else if (a === "--fleet") out.fleet = true;
@@ -68,6 +74,12 @@ function parseArgs(argv) {
         .split(",")
         .map((s) => s.trim())
         .filter(Boolean);
+    } else if (a === "--ext") {
+      out.ext = String(argv[++i] || "")
+        .split(",")
+        .map((s) => s.trim().toLowerCase())
+        .filter(Boolean)
+        .map((s) => (s.startsWith(".") ? s : `.${s}`));
     } else if (a === "--help" || a === "-h") out.help = true;
   }
   return out;
@@ -75,7 +87,7 @@ function parseArgs(argv) {
 
 function usage() {
   process.stderr.write(
-    "Usage: node manifest-build.js --root <dir> --out <manifest.jsonl> [--exclude-defaults] [--exclude name]... [--fleet] [--include-archive] [--repos a,b]\n",
+    "Usage: node manifest-build.js --root <dir> --out <manifest.jsonl> [--snapshot-dir <dir>] [--exclude-defaults] [--exclude name]... [--fleet] [--include-archive] [--repos a,b] [--ext .md,.mdx]\n",
   );
 }
 
@@ -109,17 +121,6 @@ function classify(rel, ext) {
   return "other";
 }
 
-function countLines(buf) {
-  if (buf.length === 0) return 0;
-  let n = 1;
-  for (let i = 0; i < buf.length; i++) {
-    if (buf[i] === 10) n++;
-  }
-  if (buf[buf.length - 1] === 10) n--;
-  if (n < 1) n = 1;
-  return n;
-}
-
 function isProbablyBinary(buf) {
   const sample = buf.subarray(0, Math.min(buf.length, 8000));
   for (let i = 0; i < sample.length; i++) {
@@ -128,27 +129,59 @@ function isProbablyBinary(buf) {
   return false;
 }
 
-function walk(rootAbs, relBase, excludeSet, records, repo) {
+function saveSnapshot(buf, sha256, snapshotDir) {
+  const dir = path.join(snapshotDir, sha256.slice(0, 2));
+  const file = path.join(dir, sha256);
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
+  try {
+    fs.writeFileSync(file, buf, { flag: "wx", mode: 0o600 });
+  } catch (err) {
+    if (err.code !== "EEXIST") throw err;
+    const fd = fs.openSync(file, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+    try {
+      if (!fs.fstatSync(fd).isFile()) {
+        throw new Error(`manifest-build: snapshot is not a regular file: ${file}`);
+      }
+      const existing = fs.readFileSync(fd);
+      if (crypto.createHash("sha256").update(existing).digest("hex") !== sha256) {
+        throw new Error(`manifest-build: snapshot hash mismatch: ${file}`);
+      }
+    } finally {
+      fs.closeSync(fd);
+    }
+  }
+  return file;
+}
+
+function walk(rootAbs, relBase, excludeSet, records, repo, extAllow, snapshotDir, manifestDir, outAbs) {
   let entries;
   try {
     entries = fs.readdirSync(rootAbs, { withFileTypes: true });
   } catch (err) {
-    process.stderr.write(`manifest-build: skip unreadable dir ${rootAbs}: ${err.message}\n`);
+    records.push({ path: relBase || path.basename(rootAbs), kind: "unreadable-directory", error: err.message, repo });
     return;
   }
   for (const ent of entries) {
     const name = ent.name;
     if (ent.isDirectory()) {
       if (shouldSkipDir(name, excludeSet)) continue;
-      walk(path.join(rootAbs, name), path.join(relBase, name), excludeSet, records, repo);
+      const child = path.join(rootAbs, name);
+      if (child === snapshotDir) continue;
+      walk(child, path.join(relBase, name), excludeSet, records, repo, extAllow, snapshotDir, manifestDir, outAbs);
       continue;
     }
-    if (!ent.isFile()) continue;
+    const symlink = ent.isSymbolicLink();
+    if (!ent.isFile() && !symlink) {
+      records.push({ path: path.join(relBase, name).split(path.sep).join("/"), kind: "unsupported", error: "Unsupported filesystem entry", repo });
+      continue;
+    }
+    if (extAllow && !extAllow.has(path.extname(name).toLowerCase())) continue;
     const abs = path.join(rootAbs, name);
+    if (abs === outAbs) continue;
     const rel = path.join(relBase, name).split(path.sep).join("/");
     let buf;
     try {
-      buf = fs.readFileSync(abs);
+      buf = symlink ? Buffer.from(fs.readlinkSync(abs), "utf8") : fs.readFileSync(abs);
     } catch (err) {
       records.push({
         path: rel,
@@ -160,6 +193,7 @@ function walk(rootAbs, relBase, excludeSet, records, repo) {
       continue;
     }
     const sha256 = crypto.createHash("sha256").update(buf).digest("hex");
+    const snapshot = path.relative(manifestDir, saveSnapshot(buf, sha256, snapshotDir)).split(path.sep).join("/");
     const ext = path.extname(name).toLowerCase();
     const binary = isProbablyBinary(buf);
     const lines = binary ? null : countLines(buf);
@@ -169,8 +203,10 @@ function walk(rootAbs, relBase, excludeSet, records, repo) {
       bytes: buf.length,
       lines,
       sha256,
+      snapshot,
       ext,
-      kind: binary ? "binary" : classify(rel, ext),
+      kind: symlink ? "symlink" : binary ? "binary" : classify(rel, ext),
+      ...(symlink ? { link_target: buf.toString("utf8") } : {}),
       binary,
       repo,
     });
@@ -196,28 +232,38 @@ function main() {
 
   const records = [];
   const walked = [];
+  const extAllow = args.ext.length > 0 ? new Set(args.ext) : null;
+  const outAbs = path.resolve(args.out);
+  const manifestDir = path.dirname(outAbs);
+  const snapshotDir = path.resolve(args.snapshotDir || path.join(manifestDir, "source", "sha256"));
   if (args.fleet) {
     const allow = resolveFleetAllowlist({
       repos: args.repos,
       includeArchive: args.includeArchive,
     });
-    const kids = fs.readdirSync(rootAbs, { withFileTypes: true });
-    for (const ent of kids) {
-      if (!ent.isDirectory()) continue;
-      if (!shouldWalkFleetChild(ent.name, allow)) continue;
-      walked.push(ent.name);
-      walk(path.join(rootAbs, ent.name), ent.name, excludeSet, records, ent.name);
+    const kids = new Map(fs.readdirSync(rootAbs, { withFileTypes: true }).map((entry) => [entry.name, entry]));
+    for (const name of allow) {
+      if (!name || name === "." || name === ".." || name.includes("/") || name.includes("\\") || !shouldWalkFleetChild(name, allow)) {
+        throw new Error(`Invalid declared fleet component: ${name}`);
+      }
+      const entry = kids.get(name);
+      if (!entry || !entry.isDirectory()) {
+        records.push({ path: name, kind: "missing-component", repo: name, error: "Declared fleet directory is missing or is not a directory" });
+        continue;
+      }
+      walked.push(name);
+      walk(path.join(rootAbs, name), name, excludeSet, records, name, extAllow, snapshotDir, manifestDir, outAbs);
     }
+
   } else {
     const repo = path.basename(rootAbs);
     walked.push(repo);
-    walk(rootAbs, "", excludeSet, records, repo);
+    walk(rootAbs, "", excludeSet, records, repo, extAllow, snapshotDir, manifestDir, outAbs);
   }
 
   records.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
 
   fs.mkdirSync(path.dirname(path.resolve(args.out)), { recursive: true });
-  const outAbs = path.resolve(args.out);
   const fd = fs.openSync(outAbs, "w");
   let totalLines = 0;
   let totalBytes = 0;
@@ -227,6 +273,7 @@ function main() {
     if (typeof r.bytes === "number") totalBytes += r.bytes;
   }
   fs.closeSync(fd);
+  if (records.some((record) => record.error)) process.exitCode = 1;
 
   process.stdout.write(
     JSON.stringify(
@@ -238,6 +285,8 @@ function main() {
         totalBytes,
         fleet: Boolean(args.fleet),
         repos: walked,
+        ext: extAllow ? [...extAllow] : null,
+        snapshotDir,
         exclude: [...excludeSet],
       },
       null,

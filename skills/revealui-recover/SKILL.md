@@ -1,11 +1,13 @@
 ---
 name: revealui-recover
-description: Recover crashed or interrupted Studio sessions (Claude + Grok). Mandatory 72h historical inventory first. Surfaces unfinished threads, orphan artifacts, git corruption, hook residue, and workboard CRASHED markers. Diagnostic-first — never executes destructive repairs without explicit approval.
+description: Recover interrupted Studio sessions and diagnose rfx checkout launch failures. Full crash recovery starts with a 72h historical inventory. Surfaces unfinished threads, orphan artifacts, git corruption, hook residue, and workboard CRASHED markers. Diagnostic-first — never executes destructive repairs without explicit approval.
 license: MIT
-allowed-tools: Bash, Read, Grep, Glob
+compatibility: RevealFleet Studio layout at REVEALFLEET_ROOT; executable helpers require Node.js 24+ and pnpm 10 when invoked.
+allowed-tools: Bash Read Grep Glob
 metadata:
+  pack: studio
   author: RevealUI Studio
-  version: "0.4.1"
+  version: "0.4.2"
   website: https://revealui.com
 ---
 
@@ -20,17 +22,42 @@ Load shared helpers:
 . "$REVEALFLEET_ROOT/revskills/scripts/lib/session-state.sh"
 ```
 
+## When rfx cannot open a checkout
+
+For a request limited to restoring checkout access, diagnose the launcher
+failure first. Follow the [reviewed checkout renewal procedure](rfx-checkout-renewal.md)
+if an admission is incomplete or tied to a previous runtime policy. Keep the
+operator approval steps and verify the admitted checkout path and branch
+against the handoff after launch. The owner worktree can map to a private
+checkout under `.reviews/`.
+
+Report checkout access and conversation recovery separately. A fresh launch
+can recover access to the work. Resuming a conversation requires a supported
+session binding. Once the checkout opens, use `revealui-pickup` to continue
+from a recorded handoff. For full crash recovery, run the inventory below.
+
 ## Required first action
 
 Run the inventory **this turn** before any "nothing to recover" claim:
 
 ```bash
-node "$REVEALFLEET_ROOT/revskills/scripts/recover-inventory.js" --hours 72
+umask 077
+RECOVER_INDEX_DIR="$(mktemp -d "${TMPDIR:-/tmp}/rev-recover.XXXXXXXX")"
+RECOVER_INDEX="$RECOVER_INDEX_DIR/locators.json"
+node "$REVEALFLEET_ROOT/revskills/scripts/recover-inventory.js" --hours 72 --index-file "$RECOVER_INDEX" || exit 1
+test -s "$RECOVER_INDEX" || { echo 'Private recovery index unavailable' >&2; exit 1; }
 ```
 
 Default window is 72 hours. If the user named a longer window, pass that `--hours`.
 
-The script is the work list. Do not substitute a memory of earlier sessions, a workboard skim, or `/tmp` crash-marker absence.
+The stdout work list contains opaque references and counts, never source paths or
+transcript text. The private index is a new 0600 JSON file in a private directory,
+with entries `{ref, adapter, sourcePath}` for session, artifact, snapshot, and
+marker references. Resolve a reference locally through that index, then review
+only the corresponding source needed for classification. Do not print the index,
+raw transcripts, or secret values into the diagnostic. Keep the index until all
+rows are classified, then remove its temporary directory. Do not substitute a
+memory of earlier sessions, a workboard skim, or `/tmp` crash-marker absence.
 
 ## Forbidden early exits
 
@@ -38,7 +65,7 @@ Never emit **No recovery needed** (Step 9 or Step 10) until all of these are tru
 
 1. `recover-inventory.js` ran in this turn.
 2. Every **unique** row is classified: `done` | `owner-gated` | `agent-unfinished` | `orphan-artifact`.
-3. Every PR the inventory listed was checked live (`gh pr view N -R owner/repo`). Do not trust assistant tails.
+3. Every PR discovered during deliberate source review was checked live (`gh pr view N -R owner/repo`). Do not trust assistant tails.
 4. `agent-unfinished` is empty, or each item is being continued in this session.
 5. Recovery-artifact paths (`~/.local/share/revealui/recovery/`) are either in git or listed as `orphan-artifact` with a next action.
 
@@ -58,7 +85,6 @@ Cron / watcher rows are one class, not N recoveries.
 ```bash
 IDENTITY="$(ss_identity)"
 SID="$(ss_session_id 2>/dev/null || true)"
-echo "identity=$IDENTITY session_id=${SID:-unresolved}"
 ```
 
 Known identities: `conductor`, `agent-extension[-N]`, `agent-edit[-N]`, `agent-system[-N]`, `revealui-studio`, `revealui-console`, `stagehand` (fallback). If `stagehand`, perform full (unscoped) recovery and flag that multi-agent state cannot be identity-filtered.
@@ -66,10 +92,19 @@ Known identities: `conductor`, `agent-extension[-N]`, `agent-edit[-N]`, `agent-s
 ## Step 1 — Historical inventory (mandatory)
 
 ```bash
-node "$REVEALFLEET_ROOT/revskills/scripts/recover-inventory.js" --hours 72
+umask 077
+RECOVER_INDEX_DIR="$(mktemp -d "${TMPDIR:-/tmp}/rev-recover.XXXXXXXX")"
+RECOVER_INDEX="$RECOVER_INDEX_DIR/locators.json"
+node "$REVEALFLEET_ROOT/revskills/scripts/recover-inventory.js" --hours 72 --index-file "$RECOVER_INDEX" || exit 1
+test -s "$RECOVER_INDEX" || { echo 'Private recovery index unavailable' >&2; exit 1; }
 ```
 
-Then classify every unique row using the table above. Verify named PRs live. Open recovery-artifact files (they are often the only copy of a design).
+For each opaque `session_ref`, `artifact_ref`, `snapshot_ref`, or `marker_ref`,
+find its `sourcePath` in the private index and inspect that file locally for the
+specific evidence needed. Classify every unique row using the table above.
+Verify any discovered PR live. Recovery artifacts may be the only copy of a
+design; review them deliberately. Keep raw source contents out of the report.
+Delete `$RECOVER_INDEX_DIR` after classification and continuation are complete.
 
 ## Step 1b — Crash / session residue (multi-adapter)
 
@@ -162,7 +197,7 @@ Report anything that would prevent the next session from running.
 ss_workboard_recent "$IDENTITY" 20
 ```
 
-Look for `[CRASHED]` entries. If the most recent entry for this identity is CRASHED and all prior recovery steps come back clean, propose clearing the marker (edit `$WORKBOARD` to prefix with `[RECOVERED]` and a timestamp) — **ask first**.
+Look for `[CRASHED]` entries. If the most recent entry for this identity is CRASHED and all prior recovery steps come back clean, propose a recovery fragment under `.revealui/workboard.d/` for owner review. Do not edit the derived workboard or auto-clear a marker based only on a launcher environment variable.
 
 ## Step 8 — Relevant memory
 
@@ -194,7 +229,7 @@ Env:        <daemon: up/down | flake: ok/check | direnv: ok/miss | revvault: ok/
 Last work:  <most recent workboard entry, summarized>
 
 Classified unique sessions:
-  - <sid or title>: <class> — <one line>
+  - <session_ref>: <class> — <one-line action without source content>
 
 Findings that need authorization:
   1. <concrete action>
@@ -217,7 +252,6 @@ Classify every finding from Steps 1–8 into two buckets using this **closed all
 - Dead-ppid `/tmp/claude-*-<N>.json` or `/tmp/revealui-*-<N>.json` files (owning process not alive).
 - Orphaned handoff older than 60 min — read into the response, do not auto-apply its recommendations.
 - `run-task [crashed]` entries that are *read-only* by type (list/status/diagnostic).
-- Workboard `[CRASHED]` → `[RECOVERED]` marker flip for THIS identity only.
 - Re-registering with the RPC daemon via session-start-equivalent RPC call.
 - Re-probing revvault / flake / direnv / pnpm reachability.
 

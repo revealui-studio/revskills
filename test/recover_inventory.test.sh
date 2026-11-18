@@ -23,7 +23,7 @@ root = Path(sys.argv[1])
 now = datetime.now(timezone.utc)
 old = now - timedelta(hours=90)
 
-def write_summary(p, sid, title, ts, cwd="/home/u/revealfleet"):
+def write_summary(p, sid, title, ts, cwd="/tmp/fleet"):
     p.mkdir(parents=True, exist_ok=True)
     (p / "summary.json").write_text(json.dumps({
         "info": {"id": sid, "cwd": cwd},
@@ -85,10 +85,10 @@ test_recover_inventory_full_lists_unique_and_artifact() {
   _ri_setup "$tmp"
   local out
   out="$(_ri "$tmp" --hours 72)"
-  if [[ "$out" == *'sid-unique'* && "$out" == *'RevealUIStudio/revdev#427'* && "$out" == *'grok-design-doc-a6760024.md'* && "$out" != *'sid-old'* ]]; then
-    pass "full report lists unique + PR + artifact, drops old"
+  if [[ "$out" == *'session_ref:'* && "$out" == *'artifact_ref:'* && "$out" != *'fix studio connect'* && "$out" != *'RevealUIStudio/revdev#427'* && "$out" != *'sid-old'* ]]; then
+    pass "full report uses opaque session and artifact references"
   else
-    fail "full report lists unique + PR + artifact, drops old" "$out"
+    fail "full report uses opaque session and artifact references" "$out"
   fi
 }
 
@@ -102,6 +102,26 @@ test_recover_inventory_collapses_cron() {
     pass "cron rows collapsed, not listed as unique"
   else
     fail "cron rows collapsed, not listed as unique" "$out"
+  fi
+}
+
+test_recover_inventory_summary_ignores_user_text_past_prefix() {
+  local tmp out
+  tmp="$(make_sandbox)"
+  mkdir -p "$tmp/.claude/projects/proj"
+  python3 - "$tmp/.claude/projects/proj/sess.jsonl" <<'PY'
+import json, sys
+path = sys.argv[1]
+first = json.dumps({"role": "user", "content": "hello from the prefix"}) + "\n"
+pad = json.dumps({"role": "assistant", "content": "x" * 200}) + "\n"
+cron = json.dumps({"role": "user", "content": "Using the gh CLI only, list open PRs now"}) + "\n"
+open(path, "w").write(first + (pad * 400) + cron)
+PY
+  out="$(_ri "$tmp" --hours 72 --summary)"
+  if [[ "$out" == *'PR-watch cron'* ]]; then
+    fail "summary classified a cron line past the read prefix" "$out"
+  else
+    pass "summary does not read a cron line past the prefix"
   fi
 }
 
@@ -124,9 +144,9 @@ chat.write_text(
 PY
   local out
   out="$(_ri "$tmp" --hours 72)"
-  if [[ "$out" == *'[redacted]'* && "$out" != *'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9'* ]]; then
-    pass "jwt-shaped last_user redacted"
+  if [[ "$out" == *'Content omitted by design:'* && "$out" != *'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9'* ]]; then
+    pass "transcript content omitted"
   else
-    fail "jwt-shaped last_user redacted" "$out"
+    fail "transcript content omitted" "$out"
   fi
 }

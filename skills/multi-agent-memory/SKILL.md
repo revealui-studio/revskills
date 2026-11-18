@@ -2,10 +2,12 @@
 name: multi-agent-memory
 description: Multi-agent shared memory patterns for AI agent coordination. Use when building shared fact logs, collaborative scratchpads, memory reconciliation, or coordinating discoveries between concurrent agents. Covers append-only fact tables, Yjs CRDT scratchpads, LLM-powered reconciliation, and session-scoped memory sharing.
 license: MIT
-allowed-tools: Read, Grep, Glob
+compatibility: Agent Skills host; executable TypeScript examples require Node.js 24+, pnpm 10 and the dependencies in the revskills package manifest.
+allowed-tools: Read Grep Glob
 metadata:
+  pack: public
   author: RevealUI Studio
-  version: "0.2.0"
+  version: "0.2.1"
   website: https://revealui.com
 ---
 
@@ -46,21 +48,21 @@ CREATE TABLE shared_facts (
 
 Write path: agent publishes via REST API -> DB insert -> Electric syncs to subscribers.
 
+The client may name a session, but the server derives `agent_id` from the authenticated principal and verifies session membership. See the executable [`examples/authorize-fact.mts`](examples/authorize-fact.mts) handler.
+
 ```typescript
-// Publishing a fact
 await fetch('/api/sync/shared-facts', {
   method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
   body: JSON.stringify({
     session_id: 'coord-abc123',
-    agent_id: 'claude-1',
     content: 'auth module has race condition in session refresh',
     fact_type: 'bug',
-    confidence: 0.9,
-    tags: ['auth', 'concurrency'],
-    source_ref: { file: 'src/auth/session.ts', line: 42 },
   }),
 });
 ```
+
+The server must reject missing authentication or membership before inserting. It must also authorize the Electric fact shape, CLI read, scratchpad patch, and reconciliation endpoints against the same session membership. Client-supplied `agent_id` is never authoritative.
 
 Read path (React): subscribe via Electric shape.
 
@@ -96,7 +98,6 @@ await fetch('/api/sync/yjs-document-patches', {
   method: 'POST',
   body: JSON.stringify({
     document_id: 'scratchpad-task-42',
-    agent_id: 'claude-2',
     patch_type: 'append_item',
     path: 'findings',
     content: 'Database index missing on user_id column',
@@ -104,46 +105,11 @@ await fetch('/api/sync/yjs-document-patches', {
 });
 ```
 
-Server-side: loads Y.Doc state, applies patch, saves updated state. Electric fans out.
+Server-side: authenticate the caller, derive the agent identity, verify document session membership, then load all persisted Yjs updates, apply the patch, and **append the incremental update atomically**. Electric can fan out after the insert. Do not replace a full-state row from a stale read; two overlapping writers would lose one patch. See the concurrent example and test in [`../yjs-collaboration/examples/append-updates.mts`](../yjs-collaboration/examples/append-updates.mts).
 
 ### Server-Side Patch Application
 
-```typescript
-import * as Y from 'yjs';
-
-function applyPatch(doc: Y.Doc, patchType: string, path: string, content: string) {
-  const root = doc.getMap('root');
-  switch (patchType) {
-    case 'set_key':
-      root.set(path, content);
-      break;
-    case 'append_section': {
-      let section = root.get(path);
-      if (!(section instanceof Y.Text)) {
-        section = new Y.Text();
-        root.set(path, section);
-      }
-      section.insert(section.length, content);
-      break;
-    }
-    case 'append_item': {
-      let arr = root.get(path);
-      if (!(arr instanceof Y.Array)) {
-        arr = new Y.Array();
-        root.set(path, arr);
-      }
-      arr.push([content]);
-      break;
-    }
-    case 'replace_section': {
-      const text = new Y.Text();
-      text.insert(0, content);
-      root.set(path, text);
-      break;
-    }
-  }
-}
-```
+The shared [`appendPatch`](../yjs-collaboration/examples/append-updates.mts) implementation is the reference for `append_section`, `append_item`, and `set_key` operations. The server authenticates the agent and authorizes `document_id` before calling it. For `replace_section`, define whether the operation is a conditional whole-section replacement or a collaborative edit; an unconditional replacement can erase a concurrent writer's intended content even if every CRDT update is saved. Preserve the full update history until a transactionally safe compaction is implemented.
 
 ## Layer 3: Reconciliation
 
@@ -187,7 +153,7 @@ All memory is scoped by coordination session ID. When agents start a shared task
 
 1. Generate or reuse a session ID (e.g., `coord-{taskId}`)
 2. All fact publications include this session ID
-3. Shape subscriptions filter by session ID
+3. Shape subscriptions filter by session ID only after the proxy verifies membership
 4. Reconciliation processes one session at a time
 
 ## Session order
