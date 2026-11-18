@@ -23,8 +23,14 @@ dependency directories. Only Git bookkeeping (`.git`) is excluded. Symlink
 targets are inspected as text; external targets are never followed. The private
 rule file itself cannot be inside the candidate scope.
 
-The GitHub workflow runs code from the protected base revision and checks out
-the candidate separately as data. It never runs candidate scripts or installs
+The GitHub workflow runs code from its own trusted revision (`github.workflow_sha`)
+and checks out the candidate separately as data. This keeps scanner helpers
+aligned with the reviewed workflow even when a promotion targets an older branch.
+For `pull_request_target`, GitHub selects the workflow from the base repository's
+default branch; the PR target can be a different branch. See GitHub's
+[event documentation](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#pull_request_target)
+and [workflow context](https://docs.github.com/en/actions/reference/workflows-and-actions/contexts#github-context).
+The job never runs candidate scripts or installs
 candidate dependencies. Issue, pull-request and comment text is also treated as
 data, without interpolating it into shell commands. Rules come from the encrypted
 repository secret `CLIENT_LEAK_RULES_JSON`; their temporary file and event input
