@@ -15,14 +15,18 @@ set -uo pipefail
 REPO="$(pwd)"
 IDENTITY="${REVEALUI_IDENTITY:-$(whoami)}"
 DISTRO="${WSL_DISTRO_NAME:-Ubuntu}"
+SIMULATED=0
+MARKER_PREFIX=claude-crash-
 
 # --- Simulate-crash mode: exercise the recovery path without killing a live session ---
 # Usage: claude-safe --simulate-crash [exit_code]   (default 139, SIGSEGV-ish)
 # Resolved before the real binary so a missing `claude` does not block the drill.
 if [[ "${1:-}" == "--simulate-crash" ]]; then
+  SIMULATED=1
+  MARKER_PREFIX=claude-simulation-
   shift
   EXIT="${1:-139}"
-  [[ "$EXIT" =~ ^[0-9]+$ ]] || EXIT=139
+  case "$EXIT" in ''|*[!0-9]*) EXIT=139;; esac
   echo "claude-safe: --simulate-crash — faking exit $EXIT without invoking real claude" >&2
 else
   # --- Resolve the real claude binary ---
@@ -48,7 +52,7 @@ esac
 
 # Rate limit: if 3+ crashes in the last 5 min, stop auto-relaunching
 CRASH_COUNT=$(find /tmp -maxdepth 1 -name 'claude-crash-*.json' -mmin -5 2>/dev/null | wc -l)
-if (( CRASH_COUNT >= 3 )); then
+if (( SIMULATED == 0 && CRASH_COUNT >= 3 )); then
   echo "claude-safe: crash rate limit tripped ($CRASH_COUNT crashes in 5 min). Not auto-relaunching." >&2
   echo "  Run manually when ready:  cd $REPO && claude 'recover'" >&2
   exit "$EXIT"
@@ -67,9 +71,9 @@ fi
 # mktemp (not a predictable name) — prevents symlink-overwrite attacks on
 # multi-user systems where /tmp is shared. Preserves the claude-crash-*.json
 # prefix so the rate-limit glob and /recover discovery still match.
-if ! CRASH_MARKER="$(mktemp --tmpdir "claude-crash-XXXXXXXXXX.json" 2>/dev/null)"; then
+if ! CRASH_MARKER="$(mktemp --tmpdir "${MARKER_PREFIX}XXXXXXXXXX.json" 2>/dev/null)"; then
   # BSD mktemp fallback (no --tmpdir).
-  CRASH_MARKER="$(mktemp "/tmp/claude-crash-XXXXXXXXXX.json" 2>/dev/null)" || {
+  CRASH_MARKER="$(mktemp "${TMPDIR:-/tmp}/${MARKER_PREFIX}XXXXXXXXXX.json" 2>/dev/null)" || {
     echo "claude-safe: mktemp failed; cannot write crash marker safely." >&2
     exit "$EXIT"
   }
@@ -95,6 +99,11 @@ else
       "$(printf '%s' "$IDENTITY" | base64 -w0)" \
       "$(printf '%s' "$SNAPSHOT" | base64 -w0)"
   } > "$CRASH_MARKER"
+fi
+
+if [ "$SIMULATED" -eq 1 ]; then
+  echo "claude-safe: simulation marker written; no recovery process launched." >&2
+  exit "$EXIT"
 fi
 
 # Locate wt.exe — override with REVEALUI_WT_EXE, else discover via PATH, else
