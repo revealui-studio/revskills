@@ -7,7 +7,7 @@ allowed-tools: Bash Read Write Edit
 metadata:
   pack: studio
   author: RevealUI Studio
-  version: "0.16.6"
+  version: "0.16.7"
   website: https://revealui.com
 ---
 
@@ -81,7 +81,7 @@ Capture pass/fail per check. Do NOT auto-fix anything destructive.
 
 ### 2a. Doc locations
 ```bash
-cd "$JV_ROOT" && "$REVEALFLEET_ROOT/revealui/node_modules/.bin/tsx" scripts/doc-locations-check.ts --quiet
+cd "$JV_ROOT" && node scripts/doc-locations-check.mjs --quiet
 ```
 Exit 0 = clean. Exit 1 = drift (e.g., handoffs at `docs/handoffs/` top-level, lane plan missing).
 
