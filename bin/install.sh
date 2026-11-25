@@ -14,6 +14,10 @@
 set -euo pipefail
 
 REPO_BIN="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ "${1:-}" = '--native' ]; then
+  shift
+  exec python3 -B "$REPO_BIN/../scripts/install-native.py" "$@"
+fi
 TARGET_DIR="${REVSKILLS_BIN_TARGET:-$HOME/.local/bin}"
 
 mkdir -p "$TARGET_DIR"

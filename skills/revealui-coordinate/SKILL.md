@@ -9,13 +9,13 @@ description: >
   Not /checkpoint (session-end archive). Not /pickup. Not grok-bot-handoff
   (cloud bots; use --bots to print a facts block for that skill).
 license: MIT
-compatibility: RevealFleet Studio layout at REVEALFLEET_ROOT; executable helpers require Node.js 24+ and pnpm 10 when invoked.
+compatibility: revealfleet Studio layout at REVEALFLEET_ROOT; executable helpers require Node.js 24+ and pnpm 10 when invoked.
 allowed-tools: Bash Read Write
 metadata:
   pack: studio
   alias: coordinate
   author: RevealUI Studio
-  version: "0.1.1"
+  version: "0.1.2"
   website: https://revealui.com
   related: "revealui-checkpoint revealui-snapshot grok-bot-handoff"
 ---
@@ -29,8 +29,8 @@ pushes into a cloud Grok Bot session.
 Load helpers:
 
 ```bash
-. "$REVEALFLEET_ROOT/revskills/scripts/lib/session-state.sh"
-COORD="$REVEALFLEET_ROOT/revskills/skills/revealui-coordinate/scripts/coordinate.js"
+. "$(revealui-session-state)"
+COORD=revealui-coordinate
 ```
 
 ## Modes
@@ -42,9 +42,9 @@ COORD="$REVEALFLEET_ROOT/revskills/skills/revealui-coordinate/scripts/coordinate
 | `full` | `/coordinate` (default) | own `active/<sid>.md`; `--bots` prints facts for `grok-bot-handoff` |
 
 ```bash
-node "$COORD" --mode=report
-node "$COORD" --mode=refresh --claim 'GAP-494' --stay-off 'revdev'
-node "$COORD" --mode=full --bots
+"$COORD" --mode=report
+"$COORD" --mode=refresh --claim 'GAP-494' --stay-off 'revdev'
+"$COORD" --mode=full --bots
 ```
 
 `--json` for machine output. `--id` overrides `ss_session_id` / `AGENT_SESSION_ID`.
