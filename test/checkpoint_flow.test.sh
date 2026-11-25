@@ -54,6 +54,11 @@ case "$1 $2" in
 esac
 MOCK
   chmod +x "$mock/node" "$mock/gh"
+  cat >"$mock/revealui-coordinate" <<'MOCK'
+#!/usr/bin/env bash
+exec node coordinate.js "$@"
+MOCK
+  chmod +x "$mock/revealui-coordinate"
 
   python3 - "$REPO_ROOT/skills/revealui-checkpoint/SKILL.md" "$box" <<'PY'
 from pathlib import Path
@@ -75,6 +80,12 @@ export JV_ROOT="$CHECKPOINT_MAIN" JV_REPO="$CHECKPOINT_MAIN"
 export REVEALFLEET_ROOT="$CHECKPOINT_FLEET" SID=fixture-session
 export IDENTITY=fixture-agent ISO_DATE=2026-11-16 TS='2026-11-16 12:00'
 export TRACK='6 pass / 0 fail' NEXT='rfg revealui'
+unset CODEX_THREAD_ID CODEX_SESSION_ID CHECKPOINT_WORKTREE
+if [ "$CHECKPOINT_MODE" = managed ]; then
+  export CODEX_THREAD_ID=fixture-session
+  export CHECKPOINT_WORKTREE="$CHECKPOINT_BOX/managed"
+  git -C "$CHECKPOINT_MAIN" worktree add "$CHECKPOINT_WORKTREE" -b chore/checkpoint-managed origin/test
+fi
 HANDOFF_BODY='## Last merge
 none
 
@@ -94,7 +105,12 @@ fi
 . "$CHECKPOINT_BOX/block-2.sh"
 test "$(cd "$JV_ROOT" && git rev-parse HEAD)" = "$CHECKPOINT_INITIAL"
 test -z "$(cd "$JV_ROOT" && git status --porcelain)"
-test ! -d "$WT"
+if [ "$CHECKPOINT_MODE" = managed ]; then
+  test -d "$WT"
+  test -z "$(cd "$WT" && git status --porcelain)"
+else
+  test ! -d "$WT"
+fi
 test -n "$(cd "$JV_ROOT" && git ls-remote origin "refs/heads/$BR")"
 test -f "$CURRENT_HANDOFF"
 RUN
@@ -107,5 +123,8 @@ RUN
   if result="$(PATH="$mock:$PATH" TMPDIR="$box" CHECKPOINT_MODE=commit bash "$box/run.sh" 2>&1)"; then
     pass 'committed checkpoint pushes only worktree fragments and leaves primary clean'
   else fail 'committed checkpoint flow' "$result"; fi
+  if result="$(PATH="$mock:$PATH" TMPDIR="$box" CHECKPOINT_MODE=managed bash "$box/run.sh" 2>&1)"; then
+    pass 'Codex reuses and retains the supplied managed worktree'
+  else fail 'managed checkpoint flow' "$result"; fi
   unset CHECKPOINT_MAIN CHECKPOINT_FLEET CHECKPOINT_BOX CHECKPOINT_INITIAL GH_CALLS
 }

@@ -6,9 +6,12 @@ test_claude_safe_ignores_other_session_snapshot() {
   tmp="$(make_sandbox)"
   decoy="/tmp/claude-last-state-0-audit-decoy.json"
   printf '%s\n' '{"other":true}' >"$decoy"
+  printf '#!/bin/sh\nprintf launched > "%s/launcher-called"\n' "$tmp" >"$tmp/wt.exe"
+  chmod +x "$tmp/wt.exe"
   assert_exit "simulate-crash exits with the requested code" 42 \
-    -- env TMPDIR="$tmp" bash "$REPO_ROOT/bin/claude-safe" --simulate-crash 42
-  marker="$(find "$tmp" -name 'claude-crash-*.json' | head -1)"
+    -- env TMPDIR="$tmp" REVEALUI_WT_EXE="$tmp/wt.exe" bash "$REPO_ROOT/bin/claude-safe" --simulate-crash 42
+  assert_exit "simulation cannot launch a recovery terminal" 0 -- test ! -e "$tmp/launcher-called"
+  marker="$(find "$tmp" -name 'claude-simulation-*.json' | head -1)"
   snap="$(node -e 'const fs=require("fs"); const raw=fs.readFileSync(process.argv[1],"utf8"); const j=JSON.parse(raw); process.stdout.write(String(j.snapshot||j.snapshot_b64||""));' "$marker")"
   rm -f "$decoy"
   if [[ -z "$snap" || "$snap" == "$decoy" ]]; then

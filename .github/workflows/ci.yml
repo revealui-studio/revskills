@@ -83,6 +83,8 @@ jobs:
       - uses: ./.github/actions/setup
       - name: Run validator tests (fixtures + full skills/plugin/leak corpus)
         run: pnpm test
+      - name: Verify native committed skill installation
+        run: python3 -B -m unittest discover -s test -p test_native_install.py
 
   structure:
     name: Structure Validation

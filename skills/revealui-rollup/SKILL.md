@@ -7,12 +7,12 @@ description: >
   the user asks to roll up handoffs. Never auto-run from /checkpoint.
   Not /checkpoint. Not /cleanup.
 license: MIT
-compatibility: RevealFleet Studio layout at REVEALFLEET_ROOT; executable helpers require Node.js 24+ and pnpm 10 when invoked.
+compatibility: revealfleet Studio layout at REVEALFLEET_ROOT; executable helpers require Node.js 24+ and pnpm 10 when invoked.
 allowed-tools: Bash Read
 metadata:
   pack: studio
   author: RevealUI Studio
-  version: "0.1.1"
+  version: "0.1.2"
   website: https://revealui.com
   related: "revealui-ops revealui-checkpoint revealui-cleanup"
 ---
@@ -23,7 +23,7 @@ Thin one-off onto the registered workflow `master-handoff-regen` (`$JV_REPO/work
 
 Load helpers:
 ```bash
-. "$REVEALFLEET_ROOT/revskills/scripts/lib/session-state.sh"
+. "$(revealui-session-state)"
 ```
 
 ## Run

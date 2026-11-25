@@ -196,7 +196,7 @@ function activeRow(args, sid) {
   const claim = args.claim || args.task || "(unclaimed)";
   const stay = args.stayOff.length > 0 ? `stay off: ${args.stayOff.join("; ")}` : "";
   const bits = [claim, stay].filter(Boolean).join(" — ");
-  return `| ${id} | WSL Grok | ${claim} | ${iso} | ${bits} |`;
+  return `| ${id} | ${process.platform} | ${claim} | ${iso} | ${bits} |`;
 }
 
 function writeActive(args, sid) {

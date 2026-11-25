@@ -1,13 +1,13 @@
 ---
 name: revealui-checkpoint
-description: Checkpoint checklist for RevealFleet sessions. Validates tracking surfaces, writes rolling handoff and workboard fragments in an isolated worktree, previews derived views, and commits only append-only fragments. Never commits on the primary .jv checkout or commits derived renders. Never master-handoff regen or auto-merge with --admin.
+description: Checkpoint checklist for revealfleet sessions. Validates tracking surfaces, writes rolling handoff and workboard fragments in an isolated worktree, previews derived views, and commits only append-only fragments. Never commits on the primary .jv checkout or commits derived renders. Never master-handoff regen or auto-merge with --admin.
 license: MIT
-compatibility: RevealFleet Studio layout at REVEALFLEET_ROOT; executable helpers require Node.js 24+ and pnpm 10 when invoked.
+compatibility: revealfleet Studio layout at REVEALFLEET_ROOT; executable helpers require Node.js 24+ and pnpm 10 when invoked.
 allowed-tools: Bash Read Write Edit
 metadata:
   pack: studio
   author: RevealUI Studio
-  version: "0.16.5"
+  version: "0.16.7"
   website: https://revealui.com
 ---
 
@@ -19,7 +19,7 @@ Policy home is `$JV_REPO/.revealui` (manager and content) before any vendor tree
 
 Load helpers:
 ```bash
-. "$REVEALFLEET_ROOT/revskills/scripts/lib/session-state.sh"
+. "$(revealui-session-state)"
 ```
 
 ## Step 1 — Resolve context
@@ -81,15 +81,28 @@ Capture pass/fail per check. Do NOT auto-fix anything destructive.
 
 ### 2a. Doc locations
 ```bash
-cd "$JV_ROOT" && "$REVEALFLEET_ROOT/revealui/node_modules/.bin/tsx" scripts/doc-locations-check.ts --quiet
+cd "$JV_ROOT" && node scripts/doc-locations-check.mjs --quiet
 ```
 Exit 0 = clean. Exit 1 = drift (e.g., handoffs at `docs/handoffs/` top-level, lane plan missing).
 
 ### 2b. Workboard freshness
 ```bash
-node "$JV_ROOT/scripts/workboard-check.js"
+node "$JV_ROOT/scripts/workboard-check.js" --capabilities | node -e '
+let input = "";
+process.stdin.setEncoding("utf8");
+process.stdin.on("data", chunk => input += chunk);
+process.stdin.on("end", () => {
+  try {
+    const capabilities = JSON.parse(input);
+    process.exit(capabilities.schema === 1 && capabilities.fullInventory === true ? 0 : 1);
+  } catch { process.exit(1); }
+});'
+node "$JV_ROOT/scripts/workboard-check.js" --full-inventory
 ```
-Read-only. Warns on stale Active Sessions / Coordination Notes / Log entries. Never blocks.
+Missing capabilities require the maintained planning-tool update; an older
+advisory session hook is not a completed checkpoint inventory.
+Read-only. Stale Active Sessions / Coordination Notes / Log entries are advisory.
+An incomplete full inventory fails and must remain an outstanding checkpoint item.
 
 ### 2c. MASTER_HANDOFF staleness
 ```bash
@@ -139,7 +152,7 @@ if [ -f "$BRANCHES_JSON" ] && command -v jq >/dev/null 2>&1; then
 fi
 ```
 
-### 3b. Open PRs across RevealFleet repos
+### 3b. Open PRs across revealfleet repos
 ```bash
 for repo in revealui revealui-jv revvault revdev revforge revkit revskills revcon; do
   count="$(gh pr list --repo RevealUIStudio/$repo --state open --json number 2>/dev/null | jq 'length' 2>/dev/null)"
@@ -194,7 +207,7 @@ primary checkout; Step 5b writes this session's row in the isolated worktree.
 A live claim needed before checkpoint belongs to `/coordinate`.
 
 ```bash
-node "$REVEALFLEET_ROOT/revskills/skills/revealui-coordinate/scripts/coordinate.js" \
+revealui-coordinate \
   --mode=report
 ```
 
@@ -282,12 +295,36 @@ Use one Bash session for the commands below so the values from Steps 1, 4,
 and 5 remain available. Stop on any failure and report the retained worktree
 path. Never hide a failed fetch, commit, push, or PR call with `|| true`.
 
+In Codex desktop, create and attach the worktree with the app's managed
+worktree tool first, based on freshly fetched `origin/test`. Create its unique
+checkpoint branch there, then set `CHECKPOINT_WORKTREE` to that absolute path.
+The commands validate and reuse that checkout. Archive it through the app only
+after publication; keep it attached if publication fails.
+
 ```bash
 set -euo pipefail
 PEERS="$(ss_live_harness_peers)"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
-BR="chore/checkpoint-${STAMP}-${IDENTITY}-$$"
-WT="${JV_REPO}-wt/ckpt-${STAMP}-$$"
+MANAGED_CHECKPOINT=0
+if [ -n "${CHECKPOINT_WORKTREE:-}" ]; then
+  WT="$CHECKPOINT_WORKTREE"
+  test "${WT#/}" != "$WT"
+  test -f "$WT/.git"
+  test "$(cd "$WT" && git rev-parse --show-toplevel)" != "$JV_ROOT"
+  test "$(cd "$WT" && git rev-parse --path-format=absolute --git-common-dir)" = "$(cd "$JV_ROOT" && git rev-parse --path-format=absolute --git-common-dir)"
+  test -z "$(cd "$WT" && git status --porcelain)"
+  BR="$(cd "$WT" && git symbolic-ref --quiet --short HEAD)"
+  case "$BR" in chore/checkpoint-*) ;; *) echo 'Expected a unique checkpoint branch' >&2; exit 1;; esac
+  test "$(cd "$WT" && git rev-parse HEAD)" = "$(cd "$JV_ROOT" && git rev-parse origin/test)"
+  MANAGED_CHECKPOINT=1
+else
+  if [ -n "${CODEX_THREAD_ID:-}${CODEX_SESSION_ID:-}" ] || [ "$IDENTITY" = codex ]; then
+    echo 'Create an attached managed worktree and set CHECKPOINT_WORKTREE first' >&2
+    exit 1
+  fi
+  BR="chore/checkpoint-${STAMP}-${IDENTITY}-$$"
+  WT="${JV_REPO}-wt/ckpt-${STAMP}-$$"
+fi
 PREVIEW_DIR="$(mktemp -d "${TMPDIR:-/tmp}/ckpt-preview.XXXXXXXX")"
 CMSG="$(mktemp "${TMPDIR:-/tmp}/cmsg-ckpt.XXXXXXXX")"
 printf 'chore(coord): checkpoint %s %s\n\nRolling handoff and workboard fragments for this session.\n' \
@@ -296,11 +333,16 @@ test -s "$CMSG"
 
 cd "$JV_ROOT"
 git fetch origin test
-mkdir -p "${JV_REPO}-wt"
-git worktree add "$WT" -b "$BR" origin/test
+if [ "$MANAGED_CHECKPOINT" -eq 1 ]; then
+  test "$(cd "$WT" && git rev-parse HEAD)" = "$(git rev-parse origin/test)"
+fi
+if [ "$MANAGED_CHECKPOINT" -eq 0 ]; then
+  mkdir -p "${JV_REPO}-wt"
+  git worktree add "$WT" -b "$BR" origin/test
+fi
 cd "$WT"
 if [ -n "$SID" ]; then
-  JV_REPO="$WT" node "$REVEALFLEET_ROOT/revskills/skills/revealui-coordinate/scripts/coordinate.js" \
+  JV_REPO="$WT" revealui-coordinate \
     --mode=refresh --id "$SID" --claim "$NEXT"
 fi
 HANDOFF_FRAGMENT="$(printf '%s\n' "$HANDOFF_BODY" \
@@ -344,7 +386,9 @@ git status --porcelain
 HANDOFF_REL="${HANDOFF_FRAGMENT#"$WT/"}"
 WORKBOARD_REL="${WORKBOARD_FRAGMENT#"$WT/"}"
 cd "$JV_ROOT"
-git worktree remove "$WT"
+if [ "$MANAGED_CHECKPOINT" -eq 0 ]; then
+  git worktree remove "$WT"
+fi
 rm -f "$CMSG"
 ```
 

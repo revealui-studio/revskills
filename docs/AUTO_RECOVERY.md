@@ -71,7 +71,10 @@ command -v claude-safe
 claude-safe --simulate-crash 42   # dry run, no real claude invocation
 ```
 
-`--simulate-crash [exit]` skips the real `claude` call, writes a crash marker, and spawns the recovery tab. Use it to verify the spawn path without killing a live session.
+`--simulate-crash [exit]` skips the real `claude` call, writes a separate
+`claude-simulation-*.json` diagnostic marker, and exits without launching a
+terminal or recovery agent. Simulation markers do not consume the real-crash
+rate limit. Tests must never launch an interactive application.
 
 ## Real SIGKILL test
 
